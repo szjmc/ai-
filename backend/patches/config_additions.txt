@@ -1,0 +1,64 @@
+# ════════════════════════════════════════════════════════════════════════
+#  请把下面这段粘贴进 backend/app/config.py 的 Settings 类里
+#
+#  这 12 项是新增的 Query / RAG 功能所依赖、但当前 config.py 尚未声明的配置。
+#  因为 Python 的默认参数在「类定义时」求值，缺任意一项都会在 import 阶段抛
+#  AttributeError，导致整个 FastAPI 启动失败（含原有的上传接口）。
+# ════════════════════════════════════════════════════════════════════════
+
+    # Milvus配置（chunk_service.py / rag_query_service.py 都需要）
+    MILVUS_HOST: str = os.getenv("MILVUS_HOST", "127.0.0.1")
+    MILVUS_PORT: str = os.getenv("MILVUS_PORT", "19530")
+    MILVUS_URI: str = os.getenv("MILVUS_URI", "http://127.0.0.1:19530")
+    MILVUS_DEFAULT_COLLECTION: str = os.getenv("MILVUS_DEFAULT_COLLECTION", "knowledge_chunks")
+    MILVUS_DEFAULT_ALIAS: str = os.getenv("MILVUS_DEFAULT_ALIAS", "default")
+    MILVUS_DEFAULT_DB: str = os.getenv("MILVUS_DEFAULT_DB", "default")
+
+    # LLM / Embedding 策略：ollama | silicon_flow
+    LLM_STRATEGY: str = os.getenv("LLM_STRATEGY", "ollama")
+    EMBEDDING_STRATEGY: str = os.getenv("EMBEDDING_STRATEGY", "ollama")
+
+    # 硅基流动（当上面策略选 silicon_flow 时使用）
+    SILICON_FLOW_API_KEY: str = os.getenv("SILICON_FLOW_API_KEY", "")
+    SILICON_FLOW_BASE_URL: str = os.getenv("SILICON_FLOW_BASE_URL", "https://api.siliconflow.cn/v1")
+    SILICON_FLOW_LLM_MODEL: str = os.getenv("SILICON_FLOW_LLM_MODEL", "Qwen/Qwen2.5-7B-Instruct")
+    SILICON_FLOW_EMBEDDING_MODEL: str = os.getenv("SILICON_FLOW_EMBEDDING_MODEL", "BAAI/bge-m3")
+
+
+# ════════════════════════════════════════════════════════════════════════
+#  可选但强烈建议：把 ChatBotQueryRouter 的 ChunkService 改成惰性初始化
+#
+#  现状：ChatBotQueryRouter.__init__ 里执行 self.chunk_service = ChunkService()，
+#  而 main.py 在模块级就构造了 ChatBotQueryRouter()。ChunkService 构造时会去连
+#  Ollama 与 Milvus 并做嵌入测试 —— 只要这两个服务没起，整个 FastAPI 就起不来，
+#  连原来的 /api/v1/file/uploadFile 也会不可用。
+#
+#  把 chatbot_query_router.py 里这两行：
+#      self.chunk_service = ChunkService()  # 复用分片服务
+#  改成：
+#      self._chunk_service = None  # 复用分片服务（惰性初始化，避免拖垮启动）
+#
+#  再在类里加一个属性：
+#      @property
+#      def chunk_service(self):
+#          if self._chunk_service is None:
+#              self._chunk_service = ChunkService()
+#          return self._chunk_service
+#
+#  这样只有真正用到分片时才初始化，FastAPI 启动不再依赖 Ollama/Milvus。
+# ════════════════════════════════════════════════════════════════════════
+
+
+# ════════════════════════════════════════════════════════════════════════
+#  已知问题：chatbot_query_router.py 的异常分支会抛第二个异常
+#
+#  except (NotFoundException, ValidationException) as e:
+#      return ApiResponse(status=e.code, ...)
+#
+#  NotFoundException / ValidationException 继承自 BaseAPIException(HTTPException)，
+#  它们有 .status_code，但没有 .code（.code 是 RAGException 的属性）。
+#  所以这一行会抛 AttributeError，把原本的 400/404 变成一个空泛的 500。
+#
+#  建议改为：
+#      return ApiResponse(status=getattr(e, "status_code", 400), message=str(e.detail), data={})
+# ════════════════════════════════════════════════════════════════════════

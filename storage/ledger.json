@@ -1,0 +1,40 @@
+{
+  "rows": [
+    {
+      "id": "db274ef7-8232-46c6-93a1-f2f7e95b2973",
+      "versionNo": 1,
+      "collectionName": "数据字典",
+      "fileName": "营养筛查-BMI_f3fa4a9b.xlsx",
+      "fileType": "xlsx",
+      "minioPath": "knowledge-base/营养筛查-BMI_f3fa4a9b.xlsx",
+      "chunkStrategy": "adaptive",
+      "description": null,
+      "status": "uploaded",
+      "createdTime": "2026-10-26T14:18:10.336Z",
+      "updatedTime": "2026-10-26T14:18:10.336Z",
+      "createdBy": 1,
+      "updatedBy": null,
+      "originalName": "营养筛查-BMI.xlsx",
+      "fileSize": 63275,
+      "contentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    },
+    {
+      "id": "2fbcf723-a186-4067-bb6f-8ce5e97490a3",
+      "versionNo": 1,
+      "collectionName": "数据字典",
+      "fileName": "Langchain课程讲解v1.0_4e6f80f6.docx",
+      "fileType": "docx",
+      "minioPath": "knowledge-base/Langchain课程讲解v1.0_4e6f80f6.docx",
+      "chunkStrategy": "adaptive",
+      "description": null,
+      "status": "uploaded",
+      "createdTime": "2026-10-26T14:03:24.662Z",
+      "updatedTime": "2026-10-26T14:03:24.662Z",
+      "createdBy": 1,
+      "updatedBy": null,
+      "originalName": "Langchain课程讲解v1.0.docx",
+      "fileSize": 6427466,
+      "contentType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    }
+  ]
+}

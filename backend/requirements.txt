@@ -1,0 +1,18 @@
+fastapi>=0.110
+uvicorn[standard]>=0.27
+python-dotenv>=1.0
+pydantic>=2.6
+SQLAlchemy>=2.0
+PyMySQL>=1.1
+minio>=7.2
+python-multipart>=0.0.9
+
+# 文档分片（/api/v1/chunks/parseFile）
+jieba>=0.42
+langchain>=0.3
+langchain-community>=0.3
+langchain-core>=0.3
+langchain-ollama>=0.2
+pymilvus>=2.4
+unstructured[md]>=0.14
+markdown>=3.5
