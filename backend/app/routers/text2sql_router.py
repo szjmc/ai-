@@ -1,12 +1,13 @@
 # routers/text2sql_router.py
 import asyncio
 import functools
+import json
 import logging
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional, Union
 
-from fastapi import FastAPI, HTTPException, Query, status
-from pydantic import BaseModel, Field
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile, status
+from pydantic import BaseModel, Field, ValidationError
 
 from app.config import settings
 from app.routers.base_router import BaseRouter
@@ -21,8 +22,10 @@ from app.services.vanna_training_service import (
     query_table_columns,
     serialize_sql_rows,
     train_all_from_json,
+    train_items_on_vanna,
 )
 from app.utils.vanna_engine import vn
+from app.utils.vanna_training_store import normalize_sql_list, normalize_text_list
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +80,39 @@ class AddTrainingRequest(BaseModel):
     )
 
 
+MAX_TRAINING_UPLOAD_BYTES = 10 * 1024 * 1024
+
+
+def parse_training_payload(payload: Any) -> AddTrainingRequest:
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="训练语料 JSON 顶层必须是对象")
+    try:
+        parsed = AddTrainingRequest.model_validate(payload)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors(include_url=False, include_context=False)) from exc
+    doc = parsed.document if parsed.document is not None else parsed.documentation
+    if not (normalize_text_list(parsed.ddl) or normalize_text_list(doc)
+            or normalize_sql_list(parsed.sql, default_question=parsed.question)):
+        raise HTTPException(status_code=400, detail="请至少提供 ddl、document 或 sql 中的一项非空训练内容")
+    return parsed
+
+
+async def read_training_upload(file: UploadFile) -> AddTrainingRequest:
+    try:
+        if not file.filename or not file.filename.lower().endswith(".json"):
+            raise HTTPException(status_code=400, detail="请上传 .json 文件")
+        content = await file.read(MAX_TRAINING_UPLOAD_BYTES + 1)
+        if len(content) > MAX_TRAINING_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail="JSON 文件不能超过 10 MB")
+        try:
+            payload = json.loads(content.decode("utf-8-sig"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise HTTPException(status_code=400, detail="文件必须是有效的 UTF-8 JSON") from exc
+        return parse_training_payload(payload)
+    finally:
+        await file.close()
+
+
 class Text2SqlRouter(BaseRouter):
     def __init__(self):
         logger.info("Initializing Text2SqlRouter")
@@ -115,7 +151,7 @@ class Text2SqlRouter(BaseRouter):
             response_model=ApiResponse,
             status_code=status.HTTP_200_OK,
             summary="训练数据（全量读取 JSON 文件）",
-            description="读取 JSON 训练文件中的全部 ddl、document、sql 并同步训练至 Vanna",
+            description="不上传时读取服务器 JSON 语料；上传 JSON 文件时仅训练文件中的语料，不覆盖服务器语料。",
             tags=["营养风险测评记录"],
         )(self.train_model)
 
@@ -124,7 +160,23 @@ class Text2SqlRouter(BaseRouter):
             response_model=ApiResponse,
             status_code=status.HTTP_200_OK,
             summary="增加训练（写入 JSON 并增量训练）",
-            description="将新增的 ddl、document、sql 写入 JSON 文件，并直接调用 vn.train 完成增量训练",
+            description="接受 JSON 请求体或 multipart 文件上传，将语料去重写入 JSON 文件并可立即增量训练。",
+            openapi_extra={"requestBody": {"content": {"application/json": {"schema": {
+                "type": "object", "properties": {
+                    "ddl": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}]},
+                    "document": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}]},
+                    "documentation": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}]},
+                    "sql": {"description": "SQL 字符串、question/sql 对象或两者组成的数组", "oneOf": [
+                        {"type": "string"},
+                        {"type": "object", "properties": {"question": {"type": "string"}, "sql": {"type": "string"}}, "required": ["sql"]},
+                        {"type": "array", "items": {"oneOf": [
+                            {"type": "string"},
+                            {"type": "object", "properties": {"question": {"type": "string"}, "sql": {"type": "string"}}, "required": ["sql"]}
+                        ]}}
+                    ]},
+                    "question": {"type": "string"}, "auto_train": {"type": "boolean", "default": True}
+                }
+            }}}}},
             tags=["营养风险测评记录"],
         )(self.add_training)
 
@@ -290,8 +342,29 @@ class Text2SqlRouter(BaseRouter):
         )
         return await self.natural_language_query(request)
 
-    async def train_model(self):
-        """手动触发全量模型训练（读取 JSON 文件并调用标准 vn.train）"""
+    async def train_model(
+        self, request: Request, file: Optional[UploadFile] = File(None, description="可选：上传 UTF-8 JSON 训练语料")
+    ):
+        """上传文件仅训练该文件；不上传则训练服务器持久化语料。"""
+        if file is not None:
+            payload = await read_training_upload(file)
+            document = payload.document if payload.document is not None else payload.documentation
+            ddl = normalize_text_list(payload.ddl)
+            docs = normalize_text_list(document)
+            sql = normalize_sql_list(payload.sql, default_question=payload.question)
+            try:
+                trained = await asyncio.get_running_loop().run_in_executor(
+                    None, functools.partial(train_items_on_vanna, vn, ddl, docs, sql)
+                )
+            except Exception as exc:
+                logger.error("上传语料训练失败: %s", exc)
+                raise HTTPException(status_code=500, detail=f"训练失败: {exc}") from exc
+            totals = {"ddl": len(ddl), "document": len(docs), "sql": len(sql),
+                      "total": len(ddl) + len(docs) + len(sql)}
+            return ApiResponse(status=200, message="上传的 JSON 语料训练完成（未修改服务器语料）",
+                               data={"trained_counts": trained, "totals": totals, "file_name": file.filename})
+        if request.headers.get("content-type", "").lower().startswith("multipart/"):
+            raise HTTPException(status_code=400, detail="请上传 JSON 文件，或不带请求体执行全量训练")
         try:
             loop = asyncio.get_running_loop()
             summary = await loop.run_in_executor(
@@ -326,11 +399,35 @@ class Text2SqlRouter(BaseRouter):
             logger.error(f"读取训练语料失败: {str(e)}")
             return ApiResponse(status=500, message=f"读取训练语料失败: {str(e)}", data=None)
 
-    async def add_training(self, request: AddTrainingRequest):
+    async def add_training(
+        self,
+        request: Request,
+        file: Optional[UploadFile] = File(None, description="上传 UTF-8 JSON 训练语料"),
+        auto_train: Optional[bool] = Form(None, description="覆盖文件中的 auto_train；默认 true"),
+    ):
         """
         新增训练接口：将 ddl、document、sql 写入 JSON 文件，并直接调用标准 vn.train 完成增量训练
         """
-        doc_payload = request.document if request.document is not None else request.documentation
+        if file is not None:
+            training = await read_training_upload(file)
+            if auto_train is not None:
+                training.auto_train = auto_train
+        elif request.headers.get("content-type", "").lower().startswith("multipart/"):
+            raise HTTPException(status_code=400, detail="请上传 JSON 文件")
+        else:
+            try:
+                body = await request.json()
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                raise HTTPException(status_code=400, detail="请求体必须是有效的 JSON 对象")
+            # Preserve the existing JSON API's empty-corpus response convention.
+            if isinstance(body, dict):
+                try:
+                    training = AddTrainingRequest.model_validate(body)
+                except ValidationError as exc:
+                    raise HTTPException(status_code=422, detail=exc.errors(include_url=False, include_context=False)) from exc
+            else:
+                raise HTTPException(status_code=400, detail="训练语料 JSON 顶层必须是对象")
+        doc_payload = training.document if training.document is not None else training.documentation
         loop = asyncio.get_running_loop()
 
         try:
@@ -339,11 +436,11 @@ class Text2SqlRouter(BaseRouter):
                 functools.partial(
                     add_training_and_sync,
                     vn,
-                    ddl=request.ddl,
+                    ddl=training.ddl,
                     document=doc_payload,
-                    sql=request.sql,
-                    question=request.question,
-                    auto_train=request.auto_train,
+                    sql=training.sql,
+                    question=training.question,
+                    auto_train=training.auto_train,
                 ),
             )
             public_data = {

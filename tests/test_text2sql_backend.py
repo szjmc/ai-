@@ -141,6 +141,65 @@ class Text2SqlBackendTests(unittest.TestCase):
             os.environ["VANNA_TRAINING_FILE"] = self.prev_env
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
+    def test_upload_full_trains_only_file_without_changing_corpus(self):
+        vn = StrictOriginalHealthRiskVanna()
+        before = load_training_corpus()
+        corpus = {"ddl": ["CREATE TABLE uploaded (id INT)"],
+                  "documentation": ["上传文档"],
+                  "sql": {"question": "多少条", "sql": "SELECT COUNT(*) FROM uploaded"}}
+        with patch.object(router_module, "vn", vn):
+            response = self.client.post("/api/v1/text2sql/train", files={
+                "file": ("corpus.json", json.dumps(corpus, ensure_ascii=False).encode(), "application/json")
+            })
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["data"]["trained_counts"], {"ddl": 1, "document": 1, "sql": 1})
+        self.assertEqual(vn.train_calls[2]["question"], "多少条")
+        self.assertEqual(load_training_corpus()["counts"], before["counts"])
+
+    def test_upload_add_deduplication_override_and_failure(self):
+        vn = StrictOriginalHealthRiskVanna()
+        corpus = {"documentation": "上传新增文档", "sql": {"sql": "SELECT 12345", "question": "测试"}, "auto_train": True}
+        content = json.dumps(corpus, ensure_ascii=False).encode()
+        with patch.object(router_module, "vn", vn):
+            result = self.client.post("/api/v1/text2sql/train/add", files={"file": ("x.json", content)}, data={"auto_train": "false"}).json()
+            self.assertEqual(result["data"]["added"]["sql"], 1)
+            self.assertFalse(result["data"]["trained"])
+            self.assertEqual(vn.train_calls, [])
+            again = self.client.post("/api/v1/text2sql/train/add", files={"file": ("x.json", content)}).json()
+            self.assertEqual(again["data"]["skipped_duplicates"]["sql"], 1)
+            self.assertEqual(vn.train_calls, [])
+            trained = self.client.post("/api/v1/text2sql/train/add", files={"file": ("new.json", b'{"ddl":"CREATE TABLE trained_upload (id INT)"}')}).json()
+            self.assertTrue(trained["data"]["trained"])
+            self.assertEqual(vn.train_calls[-1]["ddl"], "CREATE TABLE trained_upload (id INT)")
+            vn.fail_on_train = True
+            fail = self.client.post("/api/v1/text2sql/train/add", files={"file": ("x.json", b'{"ddl":"CREATE TABLE upload_failure (id INT)"}')}).json()
+            self.assertEqual(fail["status"], 502)
+            self.assertTrue(fail["data"]["saved_to_json"])
+            self.assertIn("CREATE TABLE upload_failure (id INT)", load_training_corpus()["ddl"])
+
+    def test_upload_validation_and_openapi(self):
+        vn = StrictOriginalHealthRiskVanna()
+        before = load_training_corpus()
+        with patch.object(router_module, "vn", vn):
+            for endpoint in ("/api/v1/text2sql/train", "/api/v1/text2sql/train/add"):
+                for name, content, expected in (
+                    ("bad.txt", b"{}", 400), ("bad.json", b"{", 400),
+                    ("bad.json", b"\xff", 400), ("bad.json", b"[]", 400),
+                    ("bad.json", b"{}", 400), ("bad.json", b'{"ddl":42}', 422),
+                    ("bad.json", b" " * (router_module.MAX_TRAINING_UPLOAD_BYTES + 1), 413),
+                ):
+                    with self.subTest(endpoint=endpoint, content=content[:20]):
+                        response = self.client.post(endpoint, files={"file": (name, content, "application/json")})
+                        self.assertEqual(response.status_code, expected, response.text)
+                response = self.client.post(endpoint, files={"wrong": ("x.json", b"{}")})
+                self.assertEqual(response.status_code, 400)
+        self.assertEqual(vn.train_calls, [])
+        self.assertEqual(load_training_corpus()["counts"], before["counts"])
+        schema = self.client.get("/openapi.json").json()
+        for path in ("/api/v1/text2sql/train", "/api/v1/text2sql/train/add"):
+            self.assertIn("multipart/form-data", schema["paths"][path]["post"]["requestBody"]["content"])
+        self.assertIn("application/json", schema["paths"]["/api/v1/text2sql/train/add"]["post"]["requestBody"]["content"])
+
     def test_01_default_repository_json_corpus(self):
         repo_json = BACKEND_DIR / "app" / "data" / "vanna_training_data.json"
         self.assertTrue(repo_json.exists(), "vanna_training_data.json 应存在")

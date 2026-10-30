@@ -112,7 +112,7 @@ def normalize_sql_list(raw: Any, default_question: Optional[str] = None) -> List
         if q_fallback:
             return [{"question": q_fallback, "sql": sql_text}]
         return [sql_text]
-    if isinstance(raw, dict):
+    if isinstance(raw, dict) or hasattr(raw, "model_dump"):
         raw = [raw]
     if not isinstance(raw, (list, tuple)):
         return []
