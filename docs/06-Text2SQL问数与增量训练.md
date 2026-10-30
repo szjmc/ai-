@@ -63,11 +63,26 @@
 | `POST /api/v1/text2sql/train/add` | **新增接口：增加训练**。接收 `ddl`、`document`、`sql`（单条或数组），自动去重写入 `vanna_training_data.json`，并在 `auto_train=true` 时立即调用 Vanna 完成增量训练 |
 | `GET /api/v1/text2sql/train/data` | 读取当前 `vanna_training_data.json` 中的全部 `ddl`、`document`、`sql` 及条数统计 |
 | `DELETE /api/v1/text2sql/train/data` | 按 `category`（`ddl` \| `document` \| `sql`）与 `index` 移除单条 JSON 语料 |
-| `POST /api/v1/text2sql/train` | 读取 `vanna_training_data.json` 全部内容执行全量训练 |
+| `POST /api/v1/text2sql/train` | 不上传时读取服务器 `vanna_training_data.json`；上传文件时训练该文件中的全部语料，不覆盖服务器文件 |
 | `POST /api/v1/text2sql/query` | 自然语言问数（生成 SQL 并按 `auto_execute` 执行查询返回结果集） |
 | `GET /api/v1/text2sql/ask` | GET 简化问数接口（`?question=...&limit=10&user_id=...`） |
 | `GET /api/v1/text2sql/tables` | 查询 MySQL `information_schema.COLUMNS` 表字段与注释 |
 | `GET /api/v1/text2sql/health` | 检查 MySQL 连接、Vanna 模型状态与训练语料数量 |
+
+### 后端 JSON 文件上传
+
+在 FastAPI 的 Swagger 页面可选择 `multipart/form-data`，用 `file` 字段上传 UTF-8 编码的 `.json` 文件（最大 10 MB）。JSON 顶层须为对象，至少包含一项非空的 `ddl`、`document`（或 `documentation`）、`sql`，字段格式与下方 JSON 请求体相同。
+
+```bash
+# 全量训练上传的语料：不会保存或覆盖服务器的 JSON 语料
+curl -X POST http://127.0.0.1:8018/api/v1/text2sql/train -F 'file=@training.json;type=application/json'
+
+# 增量导入：追加去重并训练新增项；可通过表单参数关闭立即训练
+curl -X POST http://127.0.0.1:8018/api/v1/text2sql/train/add \
+  -F 'file=@training.json;type=application/json' -F 'auto_train=false'
+```
+
+增量上传的 `auto_train` 表单字段优先于 JSON 文件中的同名字段，均未提供时默认为 `true`。训练失败时语料可能已经保存，响应会标记 `saved_to_json`；应修复服务后使用全量训练重试。全量训练不会清空已有 Vanna 向量。原有不带请求体的全量训练及增量 JSON 请求体仍然可用。上述文件上传直接调用 FastAPI 后端，Next.js 前端代理仍使用原有 JSON 调用方式。
 
 ### `POST /api/v1/text2sql/train/add` 请求示例
 
