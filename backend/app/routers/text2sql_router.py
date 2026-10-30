@@ -358,11 +358,13 @@ class Text2SqlRouter(BaseRouter):
                 "document": result["document"],
                 "sql": result["sql"],
             }
-            msg = (
-                "新增训练完成：语料已写入 JSON 文件并同步至 Vanna 模型"
-                if result["trained"]
-                else "训练语料已保存至 JSON 文件（未执行立即训练）"
-            )
+            has_added = any(result["added"].values())
+            if result["trained"]:
+                msg = "新增训练完成：语料已写入 JSON 文件并同步至 Vanna 模型"
+            elif not has_added:
+                msg = "所提交语料已存在于 JSON 文件中，已自动跳过重复项"
+            else:
+                msg = "训练语料已保存至 JSON 文件（未执行立即训练）"
             return ApiResponse(status=200, message=msg, data=public_data)
         except ValueError as ve:
             return ApiResponse(status=400, message=str(ve), data=None)

@@ -37,6 +37,8 @@ def clean_generated_sql(raw_sql: Optional[str]) -> str:
 
 def _json_safe_value(value: Any) -> Any:
     if isinstance(value, Decimal):
+        if value.as_tuple().exponent == 0:
+            return int(value)
         return float(value)
     if isinstance(value, datetime):
         return value.strftime("%Y-%m-%d %H:%M:%S")
@@ -163,7 +165,7 @@ def add_training_and_sync(
     1. 先将 ddl、document、sql 原子写入 vanna_training_data.json（自动去重）
     2. 若 auto_train=True，直接调用标准 vn.train(...) 完成增量向量训练
     """
-    snapshot, submitted_bundle, skipped_counts = append_training_corpus(
+    snapshot, added_bundle, skipped_counts = append_training_corpus(
         ddl=ddl,
         document=document,
         sql=sql,
@@ -172,14 +174,17 @@ def add_training_and_sync(
 
     trained_counts = {"ddl": 0, "document": 0, "sql": 0}
     trained = False
+    has_new_items = bool(
+        added_bundle["ddl"] or added_bundle["document"] or added_bundle["sql"]
+    )
 
-    if auto_train:
+    if auto_train and has_new_items:
         try:
             trained_counts = train_items_on_vanna(
                 vn_instance,
-                ddl_list=submitted_bundle["ddl"],
-                document_list=submitted_bundle["document"],
-                sql_list=submitted_bundle["sql"],
+                ddl_list=added_bundle["ddl"],
+                document_list=added_bundle["document"],
+                sql_list=added_bundle["sql"],
             )
             trained = True
         except Exception as exc:

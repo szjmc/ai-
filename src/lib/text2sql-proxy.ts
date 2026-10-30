@@ -159,7 +159,7 @@ async function atomicWriteCorpus(file: string, payload: { ddl: string[]; documen
 
 async function appendLocalTrainingCorpus(payload: AddTrainingPayload): Promise<AddTrainingResult> {
   const submittedDdl = normalizeTextArray(payload.ddl);
-  const submittedDoc = normalizeTextArray(payload.document);
+  const submittedDoc = normalizeTextArray(payload.document ?? payload.documentation);
   const submittedSql = normalizeSqlArray(payload.sql, payload.question);
 
   if (!submittedDdl.length && !submittedDoc.length && !submittedSql.length) {
@@ -374,7 +374,7 @@ export async function forwardAddTraining(
   payload: AddTrainingPayload,
 ): Promise<{ message: string; data: AddTrainingResult }> {
   const submittedDdl = normalizeTextArray(payload.ddl);
-  const submittedDoc = normalizeTextArray(payload.document);
+  const submittedDoc = normalizeTextArray(payload.document ?? payload.documentation);
   const submittedSql = normalizeSqlArray(payload.sql, payload.question);
   if (!submittedDdl.length && !submittedDoc.length && !submittedSql.length) {
     throw new ApiError(400, "请至少填写或导入 ddl、document、sql 中的一项训练内容");

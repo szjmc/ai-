@@ -119,6 +119,7 @@ export type TrainingCorpusData = {
 export type AddTrainingPayload = {
   ddl?: string | string[];
   document?: string | string[];
+  documentation?: string | string[];
   sql?: SqlTrainingItem | SqlTrainingItem[];
   question?: string;
   auto_train?: boolean;

@@ -229,6 +229,7 @@ def append_training_corpus(
     file_path = get_training_file_path(custom_path)
     added_counts = {"ddl": 0, "document": 0, "sql": 0}
     skipped_counts = {"ddl": 0, "document": 0, "sql": 0}
+    added_bundle: Dict[str, List[Any]] = {"ddl": [], "document": [], "sql": []}
 
     with _STORE_LOCK:
         if not file_path.exists():
@@ -245,6 +246,7 @@ def append_training_corpus(
                 skipped_counts["ddl"] += 1
             else:
                 corpus["ddl"].append(item)
+                added_bundle["ddl"].append(item)
                 existing_ddl_fp.add(fp)
                 added_counts["ddl"] += 1
 
@@ -255,6 +257,7 @@ def append_training_corpus(
                 skipped_counts["document"] += 1
             else:
                 corpus["document"].append(item)
+                added_bundle["document"].append(item)
                 existing_doc_fp.add(fp)
                 added_counts["document"] += 1
 
@@ -265,6 +268,7 @@ def append_training_corpus(
                 skipped_counts["sql"] += 1
             else:
                 corpus["sql"].append(item)
+                added_bundle["sql"].append(item)
                 existing_sql_fp.add(fp)
                 added_counts["sql"] += 1
 
@@ -274,11 +278,6 @@ def append_training_corpus(
         stat = file_path.stat()
         updated_at = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
 
-    submitted_bundle = {
-        "ddl": submitted_ddl,
-        "document": submitted_doc,
-        "sql": submitted_sql,
-    }
     snapshot = {
         "ddl": corpus["ddl"],
         "document": corpus["document"],
@@ -295,7 +294,7 @@ def append_training_corpus(
         "file_name": file_path.name,
         "updated_at": updated_at,
     }
-    return snapshot, submitted_bundle, skipped_counts
+    return snapshot, added_bundle, skipped_counts
 
 
 def remove_training_item(
