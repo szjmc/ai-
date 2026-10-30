@@ -1,6 +1,7 @@
 """
-Backend integration tests for Text2SqlRouter, HealthRiskVanna, and JSON training store.
-Uses an isolated temporary JSON file via VANNA_TRAINING_FILE so repository data stays clean.
+Backend integration tests for Text2SqlRouter, vanna_training_service, and JSON training store.
+Includes explicit regression test against a strict original HealthRiskVanna instance
+that has NO custom add_training_data / load_training_data / vanna_ready attributes.
 """
 
 import json
@@ -21,17 +22,72 @@ if str(BACKEND_DIR) not in sys.path:
 from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
+import app.routers.text2sql_router as router_module  # noqa: E402
 from app.routers.text2sql_router import Text2SqlRouter  # noqa: E402
-from app.utils.vanna_engine import clean_generated_sql, vn, _serialize_rows  # noqa: E402
+from app.services.vanna_training_service import (  # noqa: E402
+    clean_generated_sql,
+    serialize_sql_rows,
+)
 from app.utils.vanna_training_store import load_training_corpus  # noqa: E402
 
 
-class FakeVannaRecorder:
-    def __init__(self):
-        self.calls = []
+class StrictOriginalHealthRiskVanna:
+    """
+    Simulates the user's untouched original HealthRiskVanna(ChromaDB_VectorStore, Ollama):
+    - ONLY exposes VannaBase.train / generate_sql and original connect_to_mysql / execute_sql(self, sql)
+    - Deliberately DOES NOT define add_training_data, load_training_data, delete_training_data,
+      vanna_ready, init_error, or 2-argument execute_sql(sql, params)!
+    """
 
-    def train(self, **kwargs):
-        self.calls.append(kwargs)
+    def __init__(self):
+        self.train_calls = []
+        self.executed_sqls = []
+
+    def train(self, question=None, sql=None, ddl=None, documentation=None, plan=None):
+        self.train_calls.append(
+            {
+                "question": question,
+                "sql": sql,
+                "ddl": ddl,
+                "documentation": documentation,
+            }
+        )
+        return "trained-id"
+
+    def generate_sql(self, question: str) -> str:
+        return (
+            "<think>检索表结构与风险等级过滤</think>\n"
+            "```sql\n"
+            "SELECT user_name, bmi, assessment_time FROM user_health_risk_assessment WHERE risk_level = '高风险' LIMIT 10\n"
+            "```"
+        )
+
+    def connect_to_mysql(self) -> bool:
+        return True
+
+    def execute_sql(self, sql: str):
+        # Strictly 1 argument `sql` just like original HealthRiskVanna.execute_sql!
+        self.executed_sqls.append(sql)
+        if "information_schema.COLUMNS" in sql:
+            return [
+                {
+                    "TABLE_NAME": "user_health_risk_assessment",
+                    "COLUMN_NAME": "total_score",
+                    "DATA_TYPE": "tinyint",
+                    "COLUMN_COMMENT": "总分",
+                }
+            ]
+        return [
+            {
+                "user_name": "王芳",
+                "bmi": Decimal("18.40"),
+                "assessment_time": datetime(2026, 10, 30, 10, 15, 0),
+            }
+        ]
+
+    def train_health_risk_tables(self):
+        # Strictly 0 arguments just like original HealthRiskVanna!
+        pass
 
 
 class Text2SqlBackendTests(unittest.TestCase):
@@ -61,113 +117,95 @@ class Text2SqlBackendTests(unittest.TestCase):
         self.assertEqual(corpus["counts"]["sql"], 5)
         self.assertIn("user_health_risk_assessment", corpus["ddl"][0])
 
-    def test_clean_generated_sql_strips_think_and_fences(self):
-        raw = "<think>先分析高风险患者过滤条件</think>\n```sql\nSELECT * FROM user_health_risk_assessment WHERE risk_level = '高风险';\n```"
-        cleaned = clean_generated_sql(raw)
-        self.assertEqual(
-            cleaned,
-            "SELECT * FROM user_health_risk_assessment WHERE risk_level = '高风险';",
-        )
+    def test_clean_generated_sql_and_serialize_rows(self):
+        raw = "<think>推理过程</think>\n```sql\nSELECT * FROM user_health_risk_assessment;\n```"
+        self.assertEqual(clean_generated_sql(raw), "SELECT * FROM user_health_risk_assessment;")
 
-    def test_serialize_rows_handles_decimal_and_datetime(self):
-        rows = [
-            {
-                "user_name": "张三",
-                "bmi": Decimal("19.25"),
-                "assessment_time": datetime(2026, 10, 30, 9, 30, 0),
-            }
-        ]
-        serialized = _serialize_rows(rows)
+        serialized = serialize_sql_rows(
+            [{"bmi": Decimal("19.25"), "assessment_time": datetime(2026, 10, 30, 9, 30, 0)}]
+        )
         self.assertEqual(serialized[0]["bmi"], 19.25)
         self.assertEqual(serialized[0]["assessment_time"], "2026-10-30 09:30:00")
 
-    def test_get_and_add_training_endpoint_writes_json_and_trains_vanna(self):
-        # 1. Initial GET initializes default 7 items
-        res_get = self.client.get("/api/v1/text2sql/train/data")
-        self.assertEqual(res_get.status_code, 200)
-        body_get = res_get.json()
-        self.assertEqual(body_get["status"], 200)
-        self.assertEqual(body_get["data"]["counts"]["total"], 7)
+    def test_all_endpoints_work_with_strict_original_health_risk_vanna_instance(self):
+        """
+        Regression test for:
+        'HealthRiskVanna' object has no attribute 'add_training_data'
+        Verifies every route works when `vn` is the user's untouched HealthRiskVanna class.
+        """
+        strict_vn = StrictOriginalHealthRiskVanna()
+        self.assertFalse(hasattr(strict_vn, "add_training_data"))
+        self.assertFalse(hasattr(strict_vn, "load_training_data"))
+        self.assertFalse(hasattr(strict_vn, "vanna_ready"))
 
-        # 2. POST /train/add appends ddl, document, sql to JSON AND triggers Vanna training
-        recorder = FakeVannaRecorder()
-        with patch.object(vn, "_ensure_vanna_ready", return_value=None), patch.object(
-            vn, "train", side_effect=recorder.train, create=True
-        ):
+        with patch.object(router_module, "vn", strict_vn):
+            # 1. GET /health
+            res_health = self.client.get("/api/v1/text2sql/health")
+            self.assertEqual(res_health.status_code, 200)
+            self.assertEqual(res_health.json()["status"], 200)
+            self.assertTrue(res_health.json()["data"]["model_loaded"])
+            self.assertTrue(res_health.json()["data"]["database_connected"])
+            self.assertEqual(res_health.json()["data"]["training_counts"]["total"], 7)
+
+            # 2. GET /train/data
+            res_data = self.client.get("/api/v1/text2sql/train/data")
+            self.assertEqual(res_data.status_code, 200)
+            self.assertEqual(res_data.json()["data"]["counts"]["total"], 7)
+
+            # 3. POST /train/add -> writes to JSON AND calls standard strict_vn.train(...)
             res_add = self.client.post(
                 "/api/v1/text2sql/train/add",
                 json={
                     "ddl": "CREATE TABLE user_diet_log (id BIGINT PRIMARY KEY, kcal INT);",
-                    "document": "user_diet_log 表记录患者每日摄入热量。",
+                    "document": "user_diet_log 记录患者每日摄入热量。",
                     "sql": [
                         {
-                            "question": "查询摄入热量低于1000的记录",
+                            "question": "查询热量低于1000的记录",
                             "sql": "SELECT * FROM user_diet_log WHERE kcal < 1000",
-                        }
+                        },
+                        "SELECT AVG(kcal) FROM user_diet_log",
                     ],
                     "auto_train": True,
                 },
             )
+            self.assertEqual(res_add.status_code, 200)
+            body_add = res_add.json()
+            self.assertEqual(body_add["status"], 200, body_add)
+            self.assertTrue(body_add["data"]["trained"])
+            self.assertEqual(body_add["data"]["added"], {"ddl": 1, "document": 1, "sql": 2})
+            self.assertEqual(body_add["data"]["counts"], {"ddl": 2, "document": 2, "sql": 7, "total": 11})
 
-        self.assertEqual(res_add.status_code, 200)
-        body_add = res_add.json()
-        self.assertEqual(body_add["status"], 200)
-        self.assertTrue(body_add["data"]["trained"])
-        self.assertEqual(body_add["data"]["added"], {"ddl": 1, "document": 1, "sql": 1})
-        self.assertEqual(body_add["data"]["counts"], {"ddl": 2, "document": 2, "sql": 6, "total": 10})
-
-        # Verify Vanna train() received ddl, documentation, and question+sql
-        self.assertEqual(len(recorder.calls), 3)
-        self.assertIn("ddl", recorder.calls[0])
-        self.assertIn("documentation", recorder.calls[1])
-        self.assertEqual(recorder.calls[2]["question"], "查询摄入热量低于1000的记录")
-        self.assertEqual(recorder.calls[2]["sql"], "SELECT * FROM user_diet_log WHERE kcal < 1000")
-
-        # Verify persisted JSON on disk has exact keys ddl, document, sql
-        disk_json = json.loads(Path(self.temp_json).read_text(encoding="utf-8"))
-        self.assertEqual(set(disk_json.keys()), {"ddl", "document", "sql"})
-        self.assertEqual(len(disk_json["ddl"]), 2)
-        self.assertEqual(len(disk_json["document"]), 2)
-        self.assertEqual(len(disk_json["sql"]), 6)
-
-        # 3. Duplicate submission is deduplicated in JSON
-        with patch.object(vn, "_ensure_vanna_ready", return_value=None), patch.object(
-            vn, "train", side_effect=recorder.train, create=True
-        ):
-            res_dup = self.client.post(
-                "/api/v1/text2sql/train/add",
-                json={"ddl": "CREATE TABLE user_diet_log (id BIGINT PRIMARY KEY, kcal INT);"},
+            # Verify standard Vanna train() calls (1 ddl + 1 doc + 2 sql = 4 calls)
+            self.assertEqual(len(strict_vn.train_calls), 4)
+            self.assertEqual(
+                strict_vn.train_calls[0]["ddl"],
+                "CREATE TABLE user_diet_log (id BIGINT PRIMARY KEY, kcal INT);",
             )
-        self.assertEqual(res_dup.json()["data"]["added"]["ddl"], 0)
-        self.assertEqual(res_dup.json()["data"]["skipped_duplicates"]["ddl"], 1)
+            self.assertEqual(
+                strict_vn.train_calls[1]["documentation"],
+                "user_diet_log 记录患者每日摄入热量。",
+            )
+            self.assertEqual(strict_vn.train_calls[2]["question"], "查询热量低于1000的记录")
+            self.assertEqual(
+                strict_vn.train_calls[2]["sql"],
+                "SELECT * FROM user_diet_log WHERE kcal < 1000",
+            )
+            self.assertIsNone(strict_vn.train_calls[3]["question"])
+            self.assertEqual(strict_vn.train_calls[3]["sql"], "SELECT AVG(kcal) FROM user_diet_log")
 
-        # 4. DELETE removes the newly added SQL item
-        res_del = self.client.delete("/api/v1/text2sql/train/data?category=sql&index=5")
-        self.assertEqual(res_del.status_code, 200)
-        self.assertEqual(res_del.json()["data"]["counts"]["sql"], 5)
+            # Verify JSON on disk
+            disk_json = json.loads(Path(self.temp_json).read_text(encoding="utf-8"))
+            self.assertEqual(set(disk_json.keys()), {"ddl", "document", "sql"})
+            self.assertEqual(len(disk_json["sql"]), 7)
 
-    def test_full_train_reads_all_items_from_json(self):
-        recorder = FakeVannaRecorder()
-        with patch.object(vn, "_ensure_vanna_ready", return_value=None), patch.object(
-            vn, "train", side_effect=recorder.train, create=True
-        ):
-            res = self.client.post("/api/v1/text2sql/train")
-        self.assertEqual(res.status_code, 200)
-        body = res.json()
-        self.assertEqual(body["status"], 200)
-        self.assertEqual(body["data"]["trained_counts"], {"ddl": 1, "document": 1, "sql": 5})
-        self.assertEqual(len(recorder.calls), 7)
+            # 4. POST /train -> full train reads all 11 items from JSON via standard strict_vn.train(...)
+            strict_vn.train_calls.clear()
+            res_full = self.client.post("/api/v1/text2sql/train")
+            self.assertEqual(res_full.status_code, 200)
+            self.assertEqual(res_full.json()["status"], 200)
+            self.assertEqual(len(strict_vn.train_calls), 11)
 
-    def test_query_and_tables_endpoints(self):
-        with patch.object(
-            vn,
-            "generate_sql",
-            return_value="SELECT user_name, total_score FROM user_health_risk_assessment WHERE risk_level = '高风险' LIMIT 10",
-        ), patch.object(
-            vn,
-            "execute_sql",
-            return_value=[{"user_name": "李四", "total_score": 5}],
-        ):
+            # 5. POST /query & GET /ask -> cleans <think> & fences, calls 1-arg execute_sql, serializes Decimal/datetime
             res_q = self.client.post(
                 "/api/v1/text2sql/query",
                 json={"question": "查询高风险患者", "limit": 10, "auto_execute": True},
@@ -175,26 +213,24 @@ class Text2SqlBackendTests(unittest.TestCase):
             self.assertEqual(res_q.status_code, 200)
             q_body = res_q.json()
             self.assertTrue(q_body["success"])
-            self.assertIn("SELECT user_name", q_body["generated_sql"])
-            self.assertEqual(q_body["result"], [{"user_name": "李四", "total_score": 5}])
+            self.assertFalse("<think>" in q_body["generated_sql"])
+            self.assertEqual(q_body["result"][0]["user_name"], "王芳")
+            self.assertEqual(q_body["result"][0]["bmi"], 18.4)
+            self.assertEqual(q_body["result"][0]["assessment_time"], "2026-10-30 10:15:00")
 
-        with patch.object(vn, "connect_to_mysql", return_value=True), patch.object(
-            vn,
-            "execute_sql",
-            return_value=[
-                {
-                    "TABLE_NAME": "user_health_risk_assessment",
-                    "COLUMN_NAME": "total_score",
-                    "DATA_TYPE": "tinyint",
-                    "COLUMN_COMMENT": "总分",
-                }
-            ],
-        ) as mock_exec:
-            res_t = self.client.get("/api/v1/text2sql/tables")
-            self.assertEqual(res_t.status_code, 200)
-            self.assertEqual(res_t.json()["data"][0]["COLUMN_NAME"], "total_score")
-            # Verify parameterized tuple was passed to execute_sql
-            self.assertEqual(len(mock_exec.call_args[0]), 2)
+            # 6. GET /tables -> works with 1-arg execute_sql(sql)
+            res_tables = self.client.get("/api/v1/text2sql/tables")
+            self.assertEqual(res_tables.status_code, 200)
+            self.assertEqual(res_tables.json()["data"][0]["COLUMN_NAME"], "total_score")
+
+            # Reject SQL injection in table_name
+            res_bad_table = self.client.get("/api/v1/text2sql/tables?table_name=bad';DROP--")
+            self.assertEqual(res_bad_table.status_code, 400)
+
+            # 7. DELETE /train/data
+            res_del = self.client.delete("/api/v1/text2sql/train/data?category=sql&index=6")
+            self.assertEqual(res_del.status_code, 200)
+            self.assertEqual(res_del.json()["data"]["counts"]["sql"], 6)
 
 
 if __name__ == "__main__":

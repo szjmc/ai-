@@ -12,7 +12,8 @@
 | --- | --- |
 | `backend/app/data/vanna_training_data.json` | 统一存放 `ddl`、`document`、`sql` 三类训练语料的持久化 JSON 文件（内置 `user_health_risk_assessment` 初始语料） |
 | `backend/app/utils/vanna_training_store.py` | 线程安全、原子落盘、自动去重的 JSON 训练文件读写工具 |
-| `backend/app/utils/vanna_engine.py` | `HealthRiskVanna` 封装（MySQL 连接、SQL 执行、从 JSON 全量训练、向 JSON 追加并执行增量训练） |
+| `backend/app/services/vanna_training_service.py` | **核心训练服务模块**：直接调用原版 Vanna 标准 `vn.train(ddl=..., documentation=..., question=..., sql=...)` 与单参数 `vn.execute_sql(sql)`，不要求原 `HealthRiskVanna` 定义任何额外自定义属性或方法 |
+| `backend/app/utils/vanna_engine.py` | `HealthRiskVanna` 封装（兼容原版及新环境导入） |
 | `backend/app/routers/text2sql_router.py` | `/api/v1/text2sql` 路由：自然语言问数、全量训练、**增加训练接口**、JSON 语料查询/删除、表结构查询 |
 | `backend/sql/user_health_risk_assessment.sql` | `user_health_risk_assessment` MySQL 建表脚本 |
 | `backend/text2sql_main.py` | 可选独立启动入口（当本机未启动 Milvus 时可直接运行 Text2SQL 服务） |

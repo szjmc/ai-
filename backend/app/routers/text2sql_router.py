@@ -11,6 +11,17 @@ from pydantic import BaseModel, Field
 from app.config import settings
 from app.routers.base_router import BaseRouter
 from app.schemas.common import ApiResponse
+from app.services.vanna_training_service import (
+    IncrementalTrainError,
+    add_training_and_sync,
+    clean_generated_sql,
+    delete_json_training_item,
+    get_json_training_corpus,
+    is_vanna_model_ready,
+    query_table_columns,
+    serialize_sql_rows,
+    train_all_from_json,
+)
 from app.utils.vanna_engine import vn
 
 logger = logging.getLogger(__name__)
@@ -113,7 +124,7 @@ class Text2SqlRouter(BaseRouter):
             response_model=ApiResponse,
             status_code=status.HTTP_200_OK,
             summary="增加训练（写入 JSON 并增量训练）",
-            description="将新增的 ddl、document、sql 写入 JSON 文件，并完成 Vanna 增量训练",
+            description="将新增的 ddl、document、sql 写入 JSON 文件，并直接调用 vn.train 完成增量训练",
             tags=["营养风险测评记录"],
         )(self.add_training)
 
@@ -166,12 +177,12 @@ class Text2SqlRouter(BaseRouter):
         return self.router
 
     async def health_check(self):
-        """健康检查端点"""
+        """健康检查端点（兼容原版 HealthRiskVanna 实例，不依赖额外自定义属性）"""
         try:
             db_connected = await asyncio.get_running_loop().run_in_executor(
                 None, vn.connect_to_mysql
             )
-            corpus = vn.load_training_data()
+            corpus = get_json_training_corpus()
             return ApiResponse(
                 status=200,
                 message="服务运行正常",
@@ -179,8 +190,8 @@ class Text2SqlRouter(BaseRouter):
                     "status": "healthy",
                     "version": "1.0.0",
                     "database_connected": db_connected,
-                    "model_loaded": bool(vn.vanna_ready),
-                    "init_error": vn.init_error,
+                    "model_loaded": is_vanna_model_ready(vn),
+                    "init_error": getattr(vn, "init_error", None),
                     "llm_model": settings.LLM_MODEL,
                     "ollama_host": settings.OLLAMA_BASE_URL,
                     "mysql_db": settings.MYSQL_DB or "test_db",
@@ -217,10 +228,11 @@ class Text2SqlRouter(BaseRouter):
             logger.info(f"收到查询请求: {effective_question}")
             loop = asyncio.get_running_loop()
 
-            # 生成SQL
-            generated_sql = await loop.run_in_executor(
+            # 调用标准 vn.generate_sql 并清理 <think> / 代码围栏
+            raw_sql = await loop.run_in_executor(
                 None, functools.partial(vn.generate_sql, effective_question)
             )
+            generated_sql = clean_generated_sql(raw_sql)
             logger.info(f"生成的SQL: {generated_sql}")
 
             if not generated_sql:
@@ -234,12 +246,13 @@ class Text2SqlRouter(BaseRouter):
 
             result = None
             if request.auto_execute and generated_sql:
-                result = await loop.run_in_executor(
+                raw_rows = await loop.run_in_executor(
                     None, functools.partial(vn.execute_sql, generated_sql)
                 )
-                if request.limit and request.limit > 0 and isinstance(result, list):
+                result = serialize_sql_rows(raw_rows)
+                if request.limit and request.limit > 0:
                     result = result[: request.limit]
-                logger.info(f"查询结果记录数: {len(result) if result else 0}")
+                logger.info(f"查询结果记录数: {len(result)}")
 
             execution_time = (datetime.now() - start_time).total_seconds()
 
@@ -278,16 +291,16 @@ class Text2SqlRouter(BaseRouter):
         return await self.natural_language_query(request)
 
     async def train_model(self):
-        """手动触发全量模型训练（读取 JSON 文件中的 ddl、document、sql）"""
+        """手动触发全量模型训练（读取 JSON 文件并调用标准 vn.train）"""
         try:
             loop = asyncio.get_running_loop()
             summary = await loop.run_in_executor(
-                None, functools.partial(vn.train_health_risk_tables, True)
+                None, functools.partial(train_all_from_json, vn)
             )
             return ApiResponse(
                 status=200,
                 message="模型全量训练完成（已从 JSON 文件加载全部语料）",
-                data=summary or {},
+                data=summary,
             )
         except Exception as e:
             logger.error(f"全量训练失败: {str(e)}")
@@ -296,7 +309,7 @@ class Text2SqlRouter(BaseRouter):
     async def get_training_data(self):
         """读取 JSON 文件中的 ddl、document、sql 训练语料"""
         try:
-            data = vn.load_training_data()
+            data = get_json_training_corpus()
             return ApiResponse(
                 status=200,
                 message="获取训练语料成功",
@@ -315,7 +328,7 @@ class Text2SqlRouter(BaseRouter):
 
     async def add_training(self, request: AddTrainingRequest):
         """
-        新增训练接口：将 ddl、document、sql 写入 JSON 文件，并触发 Vanna 增加训练
+        新增训练接口：将 ddl、document、sql 写入 JSON 文件，并直接调用标准 vn.train 完成增量训练
         """
         doc_payload = request.document if request.document is not None else request.documentation
         loop = asyncio.get_running_loop()
@@ -324,7 +337,8 @@ class Text2SqlRouter(BaseRouter):
             result = await loop.run_in_executor(
                 None,
                 functools.partial(
-                    vn.add_training_data,
+                    add_training_and_sync,
+                    vn,
                     ddl=request.ddl,
                     document=doc_payload,
                     sql=request.sql,
@@ -352,24 +366,26 @@ class Text2SqlRouter(BaseRouter):
             return ApiResponse(status=200, message=msg, data=public_data)
         except ValueError as ve:
             return ApiResponse(status=400, message=str(ve), data=None)
-        except Exception as e:
-            logger.error(f"增加训练失败: {str(e)}", exc_info=True)
-            # 若 JSON 文件已成功落盘而 Vanna 向量入库失败，同时返回最新语料快照以便前端提示
-            try:
-                latest = vn.load_training_data()
-                fallback_data = {
-                    "saved_to_json": True,
-                    "trained": False,
-                    "counts": latest["counts"],
-                    "file_name": latest["file_name"],
-                    "updated_at": latest["updated_at"],
-                }
-            except Exception:
-                fallback_data = None
+        except IncrementalTrainError as train_err:
+            logger.error(f"Vanna 向量入库失败: {str(train_err)}", exc_info=True)
+            snap = train_err.snapshot
             return ApiResponse(
                 status=502,
-                message=f"语料已保存至 JSON 文件，但 Vanna 增量训练失败: {str(e)}",
-                data=fallback_data,
+                message=f"语料已保存至 JSON 文件，但调用 Vanna 训练失败: {str(train_err)}",
+                data={
+                    "saved_to_json": True,
+                    "trained": False,
+                    "counts": snap["counts"],
+                    "file_name": snap["file_name"],
+                    "updated_at": snap["updated_at"],
+                },
+            )
+        except Exception as e:
+            logger.error(f"增加训练失败: {str(e)}", exc_info=True)
+            return ApiResponse(
+                status=500,
+                message=f"增加训练失败: {str(e)}",
+                data=None,
             )
 
     async def delete_training_data(
@@ -381,7 +397,7 @@ class Text2SqlRouter(BaseRouter):
     ):
         """按类别和下标从 JSON 文件删除指定训练条目"""
         try:
-            result = vn.delete_training_data(category=category, index=index)
+            result = delete_json_training_item(category=category, index=index)
             return ApiResponse(
                 status=200,
                 message="已从 JSON 训练文件中移除该条目",
@@ -407,29 +423,20 @@ class Text2SqlRouter(BaseRouter):
             "user_health_risk_assessment", description="目标表名（默认 user_health_risk_assessment）"
         ),
     ):
-        """获取表结构信息"""
+        """获取表结构信息（兼容单参数 vn.execute_sql(sql)）"""
         try:
             loop = asyncio.get_running_loop()
             connected = await loop.run_in_executor(None, vn.connect_to_mysql)
             if not connected:
                 raise HTTPException(status_code=500, detail="数据库连接失败")
 
-            sql = """
-            SELECT 
-                TABLE_NAME,
-                COLUMN_NAME,
-                DATA_TYPE,
-                COLUMN_COMMENT
-            FROM information_schema.COLUMNS 
-            WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s
-            ORDER BY ORDINAL_POSITION
-            """
-
             db_name = settings.MYSQL_DB or "test_db"
             result = await loop.run_in_executor(
-                None, functools.partial(vn.execute_sql, sql, (db_name, table_name.strip()))
+                None, functools.partial(query_table_columns, vn, db_name, table_name)
             )
             return ApiResponse(status=200, data=result, message="success")
+        except ValueError as ve:
+            raise HTTPException(status_code=400, detail=str(ve))
         except HTTPException:
             raise
         except Exception as e:
