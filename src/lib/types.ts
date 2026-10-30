@@ -95,4 +95,89 @@ export type ChatStatus = {
   backend_config?: unknown;
 };
 
+/** Text2SQL 智能问数与增量训练（backend: text2sql_router.py & vanna_engine.py） */
+export type TrainingCategory = "ddl" | "document" | "sql";
+export type SqlTrainingItem = string | { question?: string; sql: string };
+
+export type TrainingCounts = {
+  ddl: number;
+  document: number;
+  sql: number;
+  total: number;
+};
+
+export type TrainingCorpusData = {
+  ddl: string[];
+  document: string[];
+  sql: SqlTrainingItem[];
+  counts: TrainingCounts;
+  file_name: string;
+  updated_at: string;
+  source?: "fastapi_backend" | "local_json";
+};
+
+export type AddTrainingPayload = {
+  ddl?: string | string[];
+  document?: string | string[];
+  sql?: SqlTrainingItem | SqlTrainingItem[];
+  question?: string;
+  auto_train?: boolean;
+};
+
+export type AddTrainingResult = TrainingCorpusData & {
+  added: { ddl: number; document: number; sql: number };
+  skipped_duplicates: { ddl: number; document: number; sql: number };
+  trained: boolean;
+  trained_counts: { ddl: number; document: number; sql: number };
+};
+
+export type FullTrainResult = {
+  trained_counts?: { ddl: number; document: number; sql: number };
+  totals?: TrainingCounts;
+  file_path?: string;
+  updated_at?: string;
+};
+
+export type Text2SqlQueryPayload = {
+  question: string;
+  user_id?: string;
+  limit?: number;
+  auto_execute?: boolean;
+};
+
+export type Text2SqlQueryResult = {
+  success: boolean;
+  question: string;
+  generated_sql?: string | null;
+  result?: Record<string, unknown>[] | null;
+  error?: string | null;
+  execution_time: number;
+};
+
+export type TableColumnInfo = {
+  TABLE_NAME: string;
+  COLUMN_NAME: string;
+  DATA_TYPE: string;
+  COLUMN_COMMENT?: string | null;
+};
+
+export type Text2SqlStatus = {
+  service: {
+    reachable: boolean;
+    base_url: string;
+    endpoint: string;
+    reason?: string;
+    hint?: string;
+  };
+  health: {
+    database_connected: boolean;
+    model_loaded: boolean;
+    init_error?: string | null;
+    llm_model?: string;
+    ollama_host?: string;
+    mysql_db?: string;
+  } | null;
+  corpus: TrainingCorpusData;
+};
+
 export type ApiBody<T> = { status: number; message: string; data: T; page: PageInfo | null };

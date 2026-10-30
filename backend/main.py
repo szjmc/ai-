@@ -5,6 +5,7 @@ from app.routers.chunk_router import ChunkRouter
 from app.routers.chatbot_query_router import ChatBotQueryRouter
 from app.routers.config_router import ConfigRouter
 from app.routers.asr_router import AsrRouter
+from app.routers.text2sql_router import Text2SqlRouter
 import logging.config
 import uvicorn
 
@@ -39,6 +40,7 @@ app.include_router(ChunkRouter()._register_routes(), prefix="/api/v1/chunks")
 app.include_router(ChatBotQueryRouter()._register_routes(), prefix="/api/v1/chat")
 app.include_router(ConfigRouter()._register_routes(), prefix="/api/v1/config")
 app.include_router(AsrRouter()._register_routes(), prefix="/api/v1/asr")
+app.include_router(Text2SqlRouter()._register_routes(), prefix="/api/v1/text2sql")
 # 健康检查端点
 
 @app.get("/")

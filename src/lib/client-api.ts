@@ -1,4 +1,24 @@
-import type { ApiBody, ChatStatus, ChunkResult, ChunkServiceStatus, FileDict, Operator, PageInfo, PreviewPayload, RagQueryResult, Stats } from "./types";
+import type {
+  AddTrainingPayload,
+  AddTrainingResult,
+  ApiBody,
+  ChatStatus,
+  ChunkResult,
+  ChunkServiceStatus,
+  FileDict,
+  FullTrainResult,
+  Operator,
+  PageInfo,
+  PreviewPayload,
+  RagQueryResult,
+  Stats,
+  TableColumnInfo,
+  Text2SqlQueryPayload,
+  Text2SqlQueryResult,
+  Text2SqlStatus,
+  TrainingCategory,
+  TrainingCorpusData,
+} from "./types";
 
 async function readBody<T>(response: Response): Promise<ApiBody<T>> {
   const body = await response.json().catch(() => null) as ApiBody<T> | null;
@@ -130,6 +150,67 @@ export async function parseFileChunks(payload: Record<string, unknown>, signal?:
       body: JSON.stringify(payload),
       signal,
     })
+  )).data;
+}
+
+/* ------------------------------------------------------------------ */
+/* Text2SQL 智能问数与 JSON 增量训练                                    */
+/* ------------------------------------------------------------------ */
+
+export async function fetchText2SqlStatus(signal?: AbortSignal) {
+  return (await readBody<Text2SqlStatus>(
+    await fetch("/api/v1/text2sql/status", { cache: "no-store", signal })
+  )).data;
+}
+
+export async function fetchTrainingData(signal?: AbortSignal) {
+  return (await readBody<TrainingCorpusData>(
+    await fetch("/api/v1/text2sql/train/data", { cache: "no-store", signal })
+  )).data;
+}
+
+export async function addTrainingData(payload: AddTrainingPayload, signal?: AbortSignal) {
+  const body = await readBody<AddTrainingResult>(
+    await fetch("/api/v1/text2sql/train/add", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal,
+    })
+  );
+  return { message: body.message, data: body.data };
+}
+
+export async function deleteTrainingItem(category: TrainingCategory, index: number) {
+  const params = new URLSearchParams({ category, index: String(index) });
+  const body = await readBody<TrainingCorpusData>(
+    await fetch(`/api/v1/text2sql/train/data?${params}`, { method: "DELETE" })
+  );
+  return { message: body.message, data: body.data };
+}
+
+export async function triggerFullTrain(signal?: AbortSignal) {
+  const body = await readBody<FullTrainResult>(
+    await fetch("/api/v1/text2sql/train", { method: "POST", signal })
+  );
+  return { message: body.message, data: body.data };
+}
+
+export async function queryText2Sql(payload: Text2SqlQueryPayload, signal?: AbortSignal) {
+  return (await readBody<Text2SqlQueryResult>(
+    await fetch("/api/v1/text2sql/query", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal,
+    })
+  )).data;
+}
+
+export async function fetchTableColumns(tableName = "user_health_risk_assessment", signal?: AbortSignal) {
+  const params = new URLSearchParams({ table_name: tableName });
+  return (await readBody<TableColumnInfo[]>(
+    await fetch(`/api/v1/text2sql/tables?${params}`, { cache: "no-store", signal })
   )).data;
 }
 export function uploadFile(form: FormData, onProgress: (value: number) => void): Promise<ApiBody<FileDict>> {

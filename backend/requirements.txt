@@ -16,3 +16,9 @@ langchain-ollama>=0.2
 pymilvus>=2.4
 unstructured[md]>=0.14
 markdown>=3.5
+
+# Text2SQL 问数与增量训练（/api/v1/text2sql）
+vanna>=0.7
+chromadb>=0.5
+ollama>=0.3
+httpx>=0.27

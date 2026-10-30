@@ -6,6 +6,7 @@ import { FilePreview } from "./file-preview";
 import { UploadDialog } from "./upload-dialog";
 import { ChunkDialog } from "./chunk-dialog";
 import { AssistantDialog } from "./assistant-dialog";
+import { Text2SqlDialog } from "./text2sql-dialog";
 import { ArchiveArt, BrandMark } from "./archive-art";
 import { createOperator, fetchFileList, fetchOperators, fetchStats, renameOperator, type ListParams } from "@/lib/client-api";
 import { FILE_STATUSES, FILE_TYPES, OPERATORS, STATUS_META, statusLabel, strategyLabel } from "@/lib/constants";
@@ -38,6 +39,7 @@ export function KnowledgeConsole() {
   const [previewEditMode, setPreviewEditMode] = useState(false);
   const [chunkFile, setChunkFile] = useState<FileDict | null>(null);
   const [assistantOpen, setAssistantOpen] = useState(false);
+  const [text2SqlOpen, setText2SqlOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [droppedFile, setDroppedFile] = useState<File | null>(null);
   const [highlightId, setHighlightId] = useState<string | null>(null);
@@ -98,7 +100,7 @@ export function KnowledgeConsole() {
     return () => controller.abort();
   }, [revision]);
 
-  const modalOpen = uploadOpen || Boolean(selectedId) || Boolean(previewFile) || Boolean(chunkFile) || assistantOpen;
+  const modalOpen = uploadOpen || Boolean(selectedId) || Boolean(previewFile) || Boolean(chunkFile) || assistantOpen || text2SqlOpen;
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -157,7 +159,7 @@ export function KnowledgeConsole() {
           <button type="submit" className="search-submit">搜索</button>
         </form>
         <div className="bucket-pill" title={`MinIO ${stats?.minio_endpoint || "127.0.0.1:9100"}`}><span className="dot" style={{ background: "#c6a36a" }} />{bucket}</div>
-        <button className="btn btn-line ai-entry" type="button" onClick={() => setAssistantOpen(true)}>AI 问答</button><button className="btn btn-primary top-upload" type="button" onClick={() => { setDroppedFile(null); setUploadOpen(true); }}><span aria-hidden="true">＋</span> 上传文件</button>
+        <button className="btn btn-line sql-entry" type="button" onClick={() => setText2SqlOpen(true)}>Text2SQL 问数</button><button className="btn btn-line ai-entry" type="button" onClick={() => setAssistantOpen(true)}>AI 问答</button><button className="btn btn-primary top-upload" type="button" onClick={() => { setDroppedFile(null); setUploadOpen(true); }}><span aria-hidden="true">＋</span> 上传文件</button>
       </div></header>
 
       <div className="workspace">
@@ -241,6 +243,7 @@ export function KnowledgeConsole() {
         onToast={pushToast}
       />
       <AssistantDialog open={assistantOpen} onClose={() => setAssistantOpen(false)} onToast={pushToast} />
+      <Text2SqlDialog open={text2SqlOpen} onClose={() => setText2SqlOpen(false)} onToast={pushToast} />
       <ChunkDialog file={chunkFile} storageMode={stats?.storage_mode} onClose={closeChunk} onToast={pushToast} />
       <FilePreview
         file={previewFile}
