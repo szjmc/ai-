@@ -12,7 +12,7 @@ type Turn = {
   result?: ChartResult;
 };
 
-const CHART_TYPES = ["柱状图", "折线图", "饼图", "条形图", "散点图"];
+const CHART_TYPES = ["柱状图", "折线图", "饼图"];
 const MAX_QUESTION = 300;
 const SUGGESTIONS = [
   "统计各个风险等级的人数，并按人数从高到低排序",

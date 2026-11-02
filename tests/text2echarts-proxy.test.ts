@@ -16,6 +16,28 @@ test("forwards the chart request and returns the actual upstream result", async 
   assert.equal(response.status, 200); assert.deepEqual(await response.json(), result);
 });
 
+test("only bar, line and pie are accepted", async () => {
+  let called = false;
+  globalThis.fetch = (async () => { called = true; return Response.json({}); }) as typeof fetch;
+  for (const unsupported of ["条形图", "散点图", "radar"]) {
+    const response = await POST(request({ question: "问题", echarts_type: unsupported }));
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).error, /柱状图、折线图、饼图/);
+  }
+  assert.equal(called, false, "unsupported types must never reach FastAPI");
+  for (const supported of ["柱状图", "折线图", "饼图"]) {
+    const response = await POST(request({ question: "问题", echarts_type: supported }));
+    assert.equal(response.status, 200, supported);
+  }
+});
+
+test("surfaces the backend detail message on an upstream rejection", async () => {
+  globalThis.fetch = (async () => Response.json({ detail: "图表类型仅支持柱状图、折线图、饼图" }, { status: 400 })) as typeof fetch;
+  const response = await POST(request({ question: "问题", echarts_type: "柱状图" }));
+  assert.equal(response.status, 502);
+  assert.match((await response.json()).error, /仅支持柱状图/);
+});
+
 test("reports validation, missing route, and unavailable upstream", async () => {
   assert.equal((await POST(request({ question: "", echarts_type: "柱状图" }))).status, 400);
   globalThis.fetch = (async () => new Response("Not Found", { status: 404 })) as typeof fetch;
