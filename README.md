@@ -35,13 +35,23 @@
 
 - `/api/diagnostics`：检查 MySQL/MinIO 连通性，不返回密码或密钥。
 - `node --import tsx --test tests/files.test.ts tests/office-preview.test.ts`：搜索、对象路径、图片格式、PDF 范围请求，以及 DOCX（大图不截断、代码块）和 XLSX（真实行列号、合并单元格、隐藏表/行/列、格式填充）的回归测试。
+- `python3 -m unittest tests.test_text2echarts_insight`：图表配置解析（echarts / json 代码块、纯文本 JSON、outputs/data 包装、尾随逗号）、表格与占比、智能报告，以及 `/generate` 接口合同——包括「响应里不含 SQL / 原始行 / 工作流原文 / 密钥」的检查（装好 FastAPI 时自动启用路由级用例，否则跳过）。
 - `node tests/office-browser.mjs`、`node tests/browser-smoke.mjs`：浏览器端回归（需先启动服务，用 `TEST_BASE_URL` 指定地址）。测试自带数据并在结束时清理。
 - `npx next typegen`、`npm exec tsc -- --noEmit`、`npm run build`：类型与生产构建检查。
+- 生产预览用 `npm run build` + `npx next start`。**重新构建后必须重启 `next start`**：`.next` 被替换后旧进程仍在引用旧的 chunk 文件名，页面会出现静态资源 500、白屏打不开的情况。
 
 字体位于 `public/fonts/`，复制部署工程时需一并保留。Python 文件保留在工程中但不对外公开。旧版本曾暴露过配置下载入口，若曾公开部署，请更换相关凭据。
 
-## 智能图表（Text2Echarts）
+## 数据分析助手（Text2Echarts）
 
-工作台「智能图表」支持输入问题、选择图表类型，调用 FastAPI 生成 SQL 和 ECharts 配置，并展示图表、SQL 与原始结果。前端通过同源 Next.js 路由转发到 `FASTAPI_URL`（默认 `http://127.0.0.1:8018`）的 `/api/v1/text2echarts/generate`，不在浏览器中暴露后端地址或密钥。仅解析 JSON 格式的图表配置，不执行生成的 JavaScript；无法识别时保留原始结果供检查。
+工作台「数据分析助手」是对话式的图表工作台：输入问题、选择图表类型后，每轮回答输出 **图表 + 表格展示 + 要点提示 + 智能报告**，并保留完整对话，可回看历史、重新提问。**所有业务逻辑都在后端 FastAPI**，前端只负责展示与输入。
 
-**部署注意：**当前仓库的 `backend/main.py` 没有挂载 `Text2EchartsRouter`，因此使用该入口启动的服务会返回 404。需要由后端维护者在实际部署的 FastAPI 应用中将该路由挂载到 `/api/v1/text2echarts`，并配置其依赖的数据库、模型和 Dify 服务；本次没有修改 Python 后端。后端 `execution_time` 统计的是生成图表前的 SQL 查询阶段，并非完整生成耗时。
+- 目前只开放三种图表类型：**柱状图、折线图、饼图**（后端 `CHART_TYPE_ALIASES` 为准，也接受 `bar` / `line` / `pie`；其它类型返回 400）。
+- 后端 `/api/v1/text2echarts/generate` 在一次请求里完成：生成并执行 SQL → 调用 Dify 工作流 → 解析图表配置 → 生成表格（单指标自动补「占比」）→ 生成智能报告（样本合计、占比最高、分组差距、风险提示）。实现见 `backend/app/utils/echarts_insight.py`，只解析 JSON，不执行工作流生成的 JavaScript。
+- 前端 `src/components/text2echarts-dialog.tsx` / `chart-answer.tsx` / `echart-view.tsx` 只渲染后端返回的 `echarts_option` / `table` / `report` / `title` / `subtitle`，不做任何数据推导。
+- **只下发用户该看到的内容**：生成的 SQL、原始 SQL 行、Dify 工作流原始响应（含 `task_id` / `usage` / 模型参数）、库表字段名、异常堆栈、后端地址与密钥一律不进响应体，只在后端日志里保留，排查时看 FastAPI 日志；错误提示统一为「没有查询到符合条件的数据…」「分析服务暂时不可用…」等可读文案。
+- 输入框支持 Enter 发送、Shift + Enter 换行，上限 300 字；图表类型以胶囊形式切换。
+
+**接口字段：**`success`、`question`、`chart_type`、`title`、`subtitle`、`echarts_option`（可直接 `setOption` 的配置）、`table`（`columns` / `rows` / `value_column` / `share_column`）、`report`（`metrics` / `summary` / `insight` / `insight_tone`）、`error`（可读提示）、`execution_time`。调试信息不进响应体。
+
+**部署注意：**`backend/main.py` 已把 `Text2EchartsRouter` 挂载到 `/api/v1/text2echarts`（独立 try 包裹，缺少可选依赖时只降级该功能）；若使用自己的 FastAPI 入口启动，需要同样挂载该路由并配置 `DIFY_API_KEY`、`DIFY_BASE_URL`（超时可用 `DIFY_TIME_OUT`，默认 600 秒）。后端 `execution_time` 统计的是生成图表前的 SQL 查询阶段，并非完整生成耗时。

@@ -22,3 +22,6 @@ vanna>=0.7
 chromadb>=0.5
 ollama>=0.3
 httpx>=0.27
+
+# Text2Echarts Dify 工作流客户端（/api/v1/text2echarts）
+requests>=2.31

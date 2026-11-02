@@ -9,7 +9,7 @@ from urllib.parse import urljoin
 
 load_dotenv()
 
-DIFY_TIME_OUT = int(os.getenv("DIFY_TIME_OUT"))
+DIFY_TIME_OUT = int(os.getenv("DIFY_TIME_OUT", "600"))
 class DifyUniversalClient:
     """通用 Dify 客户端，支持聊天应用和工作流应用"""
 

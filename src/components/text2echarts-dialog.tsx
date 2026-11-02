@@ -1,85 +1,173 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import type { EChartsType, EChartsOption } from "echarts";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ChartAnswer, type ChartResult } from "./chart-answer";
 
-type Result = { success: boolean; question: string; generated_sql?: string | null; result?: unknown; error?: string | null; execution_time?: number };
+type Turn = {
+  id: string;
+  question: string;
+  chartType: string;
+  state: "loading" | "ok" | "error";
+  error?: string;
+  result?: ChartResult;
+};
 
-// Workflow results may contain a JSON option directly or inside Dify's answer / outputs.
-// Deliberately do not evaluate generated JavaScript or formatter functions.
-function findOption(value: unknown, depth = 0): Record<string, unknown> | null {
-  if (depth > 8 || value == null) return null;
-  if (typeof value === "string") {
-    const text = value.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-    try { return findOption(JSON.parse(text), depth + 1); } catch { return null; }
-  }
-  if (Array.isArray(value)) {
-    for (const item of value) { const found = findOption(item, depth + 1); if (found) return found; }
-    return null;
-  }
-  if (typeof value !== "object") return null;
-  const object = value as Record<string, unknown>;
-  if (object.series && (Array.isArray(object.series) || typeof object.series === "object")) return object;
-  for (const key of ["option", "options", "answer", "outputs", "data", "result", "text"]) {
-    const found = findOption(object[key], depth + 1); if (found) return found;
-  }
-  return null;
-}
+const CHART_TYPES = ["柱状图", "折线图", "饼图"];
+const MAX_QUESTION = 300;
+const SUGGESTIONS = [
+  "统计各个风险等级的人数，并按人数从高到低排序",
+  "各疾病类型中高风险人数及占比",
+  "最近 3 个月高风险会员数量变化趋势",
+];
+
+let turnSeed = 0;
+const nextTurnId = () => `turn-${Date.now()}-${turnSeed++}`;
 
 export function Text2EchartsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const chartNode = useRef<HTMLDivElement>(null);
-  const chart = useRef<EChartsType | null>(null);
   const [question, setQuestion] = useState("");
-  const [type, setType] = useState("柱状图");
+  const [chartType, setChartType] = useState(CHART_TYPES[0]);
+  const [turns, setTurns] = useState<Turn[]>([]);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [result, setResult] = useState<Result | null>(null);
-  const option = result ? findOption(result.result) : null;
-  useEffect(() => {
-    if (!open || !option || !chartNode.current) return;
-    let disposed = false;
-    let observer: ResizeObserver | undefined;
-    import("echarts").then((echarts) => {
-      if (disposed || !chartNode.current) return;
-      chart.current = echarts.init(chartNode.current);
-      try { chart.current.setOption(option as EChartsOption); } catch { setError("图表配置无法渲染，请检查下方原始结果。"); }
-      observer = new ResizeObserver(() => chart.current?.resize());
-      observer.observe(chartNode.current);
-    }).catch(() => setError("图表组件加载失败，请重试。"));
-    return () => { disposed = true; observer?.disconnect(); chart.current?.dispose(); chart.current = null; };
-    // Result is the stable source for the derived option.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, result]);
+  const [online, setOnline] = useState<"idle" | "on" | "off">("idle");
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const composing = useRef(false);
 
-  async function generate(event: React.FormEvent) {
-    event.preventDefault();
-    if (!question.trim() || busy) return;
-    setBusy(true); setError(""); setResult(null);
+  const scrollToEnd = useCallback(() => {
+    const node = scrollRef.current;
+    if (!node) return;
+    // 旧浏览器没有 Element.scrollTo，退回直接设置 scrollTop。
+    if (typeof node.scrollTo === "function") node.scrollTo({ top: node.scrollHeight, behavior: "smooth" });
+    else node.scrollTop = node.scrollHeight;
+  }, []);
+
+  useEffect(() => {
+    if (turns.length) scrollToEnd();
+  }, [turns, scrollToEnd]);
+
+  useEffect(() => {
+    if (open) inputRef.current?.focus();
+  }, [open]);
+
+  const ask = useCallback(async (text: string, type: string) => {
+    const id = nextTurnId();
+    setTurns((current) => [...current, { id, question: text, chartType: type, state: "loading" }]);
+    setBusy(true);
     try {
-      const response = await fetch("/api/v1/text2echarts/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: question.trim(), echarts_type: type, auto_execute: true, limit: 10 }) });
-      const data = await response.json() as Result & { detail?: unknown };
-      if (!response.ok || !data.success) throw new Error(data.error || "图表生成失败，请检查服务状态。");
-      setResult(data);
-    } catch (e) { setError(e instanceof Error ? e.message : "图表生成失败"); }
-    finally { setBusy(false); }
-  }
+      const response = await fetch("/api/v1/text2echarts/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: text, echarts_type: type, auto_execute: true, limit: 10 }),
+      });
+      const data = await response.json() as ChartResult & { detail?: unknown };
+      if (!response.ok || !data.success) throw new Error(data.error || "本次分析未能完成，请稍后重试。");
+      setOnline("on");
+      setTurns((current) => current.map((turn) => (turn.id === id ? { ...turn, state: "ok", result: data } : turn)));
+    } catch (caught) {
+      setOnline("off");
+      setTurns((current) => current.map((turn) => (turn.id === id
+        ? { ...turn, state: "error", error: caught instanceof Error ? caught.message : "图表生成失败" }
+        : turn)));
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  const send = useCallback(() => {
+    const text = question.trim();
+    if (!text || busy) return;
+    setQuestion("");
+    void ask(text, chartType);
+    inputRef.current?.focus();
+  }, [ask, busy, chartType, question]);
+
+  const retry = useCallback((turn: Turn) => {
+    setTurns((current) => current.filter((item) => item.id !== turn.id));
+    void ask(turn.question, turn.chartType);
+  }, [ask]);
+
   if (!open) return null;
-  return <section className="chart-dialog workspace-tool" aria-labelledby="chart-title">
-    <header className="chart-header"><div><p className="chart-eyebrow">AI DATA VISUALIZATION</p><h2 id="chart-title">智能图表</h2><p>用自然语言探索数据，快速生成可视化图表。</p></div><button className="icon-btn" type="button" onClick={onClose} aria-label="返回知识文件">←</button></header>
-    <div className="chart-body"><form onSubmit={generate} className="chart-form">
-      <div className="chart-section-heading"><span className="chart-step">01</span><div><h3>描述分析需求</h3><p>输入你想了解的问题，并选择合适的图表类型。</p></div></div>
-      <label className="chart-label" htmlFor="chart-question">分析问题</label><textarea id="chart-question" value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="例如：统计各风险等级的人数，并按照人数降序排列" required />
-      <button className="chart-example" type="button" onClick={() => setQuestion("统计各个风险等级的人数，并按人数从高到低排序")}>试试：统计各风险等级的人数 ↗</button>
-      <label className="chart-label" htmlFor="chart-type">图表类型</label><select id="chart-type" value={type} onChange={(e) => setType(e.target.value)}><option>柱状图</option><option>折线图</option><option>饼图</option><option>散点图</option><option>条形图</option></select>
-      <button className="btn btn-primary chart-submit" disabled={busy || !question.trim()} type="submit">{busy ? "正在生成图表…" : "✦  生成图表"}</button>
-      <p className="chart-hint">生成过程包含 SQL 查询和图表配置生成，可能需要一些时间。请核对生成的 SQL 和结果。</p>
-    </form><section className="chart-output" aria-live="polite"><div className="chart-section-heading"><span className="chart-step">02</span><div><h3>可视化结果</h3><p>生成后可在此查看图表及查询详情。</p></div></div>
-      {error && <div className="inline-error" role="alert">{error}</div>}
-      {busy && <div className="chart-empty"><div className="chart-empty-icon">✦</div><strong>正在分析数据</strong><p>正在请求后端服务，请稍候。</p></div>}
-      {!busy && !result && !error && <div className="chart-empty"><div className="chart-empty-icon">▥</div><strong>你的图表将在这里呈现</strong><p>输入问题并选择图表类型，开始探索数据。</p></div>}
-      {result && <><div className="chart-result-meta"><strong>{result.question}</strong>{typeof result.execution_time === "number" && <span>SQL 查询耗时 {result.execution_time.toFixed(2)} 秒</span>}</div>{option ? <div ref={chartNode} className="chart-canvas" role="img" aria-label={`图表：${result.question}`} /> : <div className="chart-empty chart-no-option"><strong>未识别到可渲染的 ECharts 配置</strong><p>服务可能未返回图表配置，或返回了非 JSON 格式。可展开原始结果检查。</p></div>}
-      {result.generated_sql && <details className="chart-details"><summary>查看生成的 SQL</summary><pre>{result.generated_sql}</pre></details>}
-      <details className="chart-details" open={!option}><summary>查看原始结果</summary><pre>{JSON.stringify(result.result, null, 2) ?? "无结果"}</pre></details></>}
-    </section></div>
+
+  const suggestions = turns.length ? [] : SUGGESTIONS;
+
+  return <section className="ana-shell workspace-tool" aria-labelledby="ana-title">
+    <header className="ana-header">
+      <div className="ana-brand">
+        <span className="ana-logo" aria-hidden="true">✦</span>
+        <div><h2 id="ana-title">数据分析助手</h2><p>支持问题解析、趋势图、表格和智能报告输出</p></div>
+      </div>
+      <div className="ana-header-right">
+        <span className={`ana-pill${online === "on" ? " on" : online === "off" ? " off" : ""}`} role="status">
+          <i aria-hidden="true" />{online === "on" ? "在线" : online === "off" ? "未连接" : "待检测"}
+        </span>
+        {turns.length > 0 && <button className="btn btn-quiet ana-reset" type="button" onClick={() => setTurns([])}>新对话</button>}
+        <button className="icon-btn" type="button" onClick={onClose} aria-label="返回知识文件">←</button>
+      </div>
+    </header>
+
+    <div className={`ana-scroll${turns.length ? "" : " is-empty"}`} ref={scrollRef}>
+      <article className="ana-turn">
+        <div className="ana-msg ana-msg-bot">
+          <span className="ana-avatar" aria-hidden="true">✦</span>
+          <div className="ana-answer">
+            <p className="ana-greeting">你好，我是数据分析助手。用一句话描述你想看的数据，我会生成图表、数据表和要点报告。</p>
+            {suggestions.length > 0 && <div className="ana-suggestions">{suggestions.map((item) => (
+              <button key={item} type="button" className="ana-chip" onClick={() => { setQuestion(item); inputRef.current?.focus(); }}>{item}</button>
+            ))}</div>}
+          </div>
+        </div>
+      </article>
+
+      {turns.map((turn) => <article className="ana-turn" key={turn.id}>
+        <div className="ana-msg ana-msg-user"><p>{turn.question}</p><span className="ana-msg-tag">{turn.chartType}</span></div>
+        <div className="ana-msg ana-msg-bot">
+          <span className="ana-avatar" aria-hidden="true">✦</span>
+          <div className="ana-answer">
+            {turn.state === "loading" && <div className="ana-loading" role="status">
+              <span className="loading-ring" aria-hidden="true" />
+              <div><strong>正在分析数据</strong><p>正在整理图表、数据表与报告，请稍候。</p></div>
+            </div>}
+            {turn.state === "error" && <div className="ana-error" role="alert">
+              <strong>本次分析没有完成</strong><p>{turn.error}</p>
+              <button type="button" className="btn btn-line" onClick={() => retry(turn)}>重新生成</button>
+            </div>}
+            {turn.state === "ok" && turn.result && <ChartAnswer result={turn.result} />}
+          </div>
+        </div>
+      </article>)}
+    </div>
+
+    <form className="ana-composer" onSubmit={(event) => { event.preventDefault(); send(); }}>
+      <div className="ana-composer-box">
+        <label className="sr-only" htmlFor="ana-question">请输入分析问题</label>
+        <textarea
+          id="ana-question"
+          ref={inputRef}
+          rows={2}
+          maxLength={MAX_QUESTION}
+          value={question}
+          placeholder="请输入分析问题，例如：最近3个月高血压会员风险变化及干预建议"
+          onChange={(event) => setQuestion(event.target.value)}
+          onCompositionStart={() => { composing.current = true; }}
+          onCompositionEnd={() => { composing.current = false; }}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" || event.shiftKey) return;
+            if (composing.current || event.nativeEvent.isComposing) return;
+            event.preventDefault();
+            send();
+          }}
+        />
+        <div className="ana-composer-foot">
+          <div className="ana-type-picker" role="group" aria-label="图表类型">
+            {CHART_TYPES.map((type) => <button key={type} type="button" className={`ana-type${chartType === type ? " on" : ""}`} aria-pressed={chartType === type} onClick={() => setChartType(type)}>{type}</button>)}
+          </div>
+          <div className="ana-composer-actions">
+            <span className={`ana-counter${question.length >= MAX_QUESTION ? " full" : ""}`}>{question.length} / {MAX_QUESTION}</span>
+            <button type="submit" className="btn btn-primary ana-send" disabled={busy || !question.trim()}>{busy ? "生成中…" : "发送提问"}</button>
+          </div>
+        </div>
+      </div>
+      <p className="ana-hint">按 Enter 发送，Shift + Enter 换行<span>·</span>数据统计与图表生成需要一点时间，请稍候。</p>
+    </form>
   </section>;
 }
