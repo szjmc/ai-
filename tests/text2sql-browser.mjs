@@ -270,7 +270,7 @@ try {
   console.log("PASS: Table schema tab renders information_schema columns + DDL reference");
 
   // 7. Close & check mobile viewport horizontal overflow
-  await dialog.getByRole("button", { name: "关闭问数窗口" }).click();
+  await dialog.getByRole("button", { name: "返回知识文件" }).click();
   await expect(dialog).toBeHidden();
 
   await page.setViewportSize({ width: 390, height: 844 });

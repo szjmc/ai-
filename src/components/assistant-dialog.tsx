@@ -9,7 +9,6 @@ import {
 } from "@/lib/client-api";
 import { formatBytes, formatTime } from "@/lib/format";
 import type { ChatStatus, FileDict, RagQueryResult } from "@/lib/types";
-import { useModalDialog } from "./use-modal-dialog";
 
 type Props = {
   open: boolean;
@@ -78,12 +77,12 @@ function resultToSpeech(result: RagQueryResult) {
 }
 
 export function AssistantDialog({ open, initialFileId, onClose, onToast }: Props) {
-  const dialog = useModalDialog(open);
+  const activeRef = useRef(false);
   const [tab, setTab] = useState<Tab>("nl");
   const [status, setStatus] = useState<ChatStatus | null>(null);
   const [checking, setChecking] = useState(false);
   const [files, setFiles] = useState<FileDict[]>([]);
-  const [fileId, setFileId] = useState("");
+  const [fileId, setFileId] = useState(initialFileId || "");
   const [collection, setCollection] = useState(DEFAULT_COLLECTION);
   const [question, setQuestion] = useState("");
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
@@ -120,9 +119,25 @@ export function AssistantDialog({ open, initialFileId, onClose, onToast }: Props
 
   useEffect(() => {
     if (!open) return;
+    activeRef.current = true;
+    return () => {
+      activeRef.current = false;
+      const recorder = recorderRef.current;
+      recorderRef.current = null;
+      if (recorder) {
+        recorder.onstop = null;
+        if (recorder.state !== "inactive") recorder.stop();
+        recorder.stream.getTracks().forEach((track) => track.stop());
+      }
+      setRecording(false);
+      window.speechSynthesis?.cancel();
+      setSpeaking(false);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
     const controller = new AbortController();
-    setError(""); setResult(null); setElapsed(0);
-    setFileId(initialFileId || "");
     probe(controller.signal);
     fetchFileList({ perPage: 50 }, controller.signal)
       .then((list) => {
@@ -221,6 +236,7 @@ export function AssistantDialog({ open, initialFileId, onClose, onToast }: Props
       return;
     }
     navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+      if (!activeRef.current) { stream.getTracks().forEach((track) => track.stop()); return; }
       const recorder = new MediaRecorder(stream);
       chunksRef.current = [];
       setSeconds(0);
@@ -278,15 +294,13 @@ export function AssistantDialog({ open, initialFileId, onClose, onToast }: Props
 
   function close() {
     if (running && !window.confirm("查询仍在后端进行中，关闭不会取消它。确定关闭吗？")) return;
-    stopRecording(true);
-    window.speechSynthesis?.cancel();
     onClose();
   }
 
   if (!open) return null;
 
   return (
-    <dialog ref={dialog} className="assistant-dialog" aria-labelledby="assistant-title" onCancel={(e) => { e.preventDefault(); close(); }}>
+    <section className="assistant-dialog workspace-tool" aria-labelledby="assistant-title">
       <header className="assistant-header">
         <div>
           <p className="kicker">NRS2002 · RAG assistant</p>
@@ -296,7 +310,7 @@ export function AssistantDialog({ open, initialFileId, onClose, onToast }: Props
           <span className={`assistant-pill${status?.chat.reachable ? " on" : " off"}`} role="status">
             <i />{checking ? "检测中…" : status?.chat.reachable ? "查询服务在线" : "查询服务未连接"}
           </span>
-          <button className="icon-btn" type="button" aria-label="关闭问答窗口" onClick={close}>×</button>
+          <button className="icon-btn" type="button" aria-label="返回知识文件" onClick={close}>←</button>
         </div>
       </header>
 
@@ -558,6 +572,6 @@ export function AssistantDialog({ open, initialFileId, onClose, onToast }: Props
           )}
         </section>
       </div>
-    </dialog>
+    </section>
   );
 }

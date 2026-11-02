@@ -39,3 +39,9 @@
 - `npx next typegen`、`npm exec tsc -- --noEmit`、`npm run build`：类型与生产构建检查。
 
 字体位于 `public/fonts/`，复制部署工程时需一并保留。Python 文件保留在工程中但不对外公开。旧版本曾暴露过配置下载入口，若曾公开部署，请更换相关凭据。
+
+## 智能图表（Text2Echarts）
+
+工作台「智能图表」支持输入问题、选择图表类型，调用 FastAPI 生成 SQL 和 ECharts 配置，并展示图表、SQL 与原始结果。前端通过同源 Next.js 路由转发到 `FASTAPI_URL`（默认 `http://127.0.0.1:8018`）的 `/api/v1/text2echarts/generate`，不在浏览器中暴露后端地址或密钥。仅解析 JSON 格式的图表配置，不执行生成的 JavaScript；无法识别时保留原始结果供检查。
+
+**部署注意：**当前仓库的 `backend/main.py` 没有挂载 `Text2EchartsRouter`，因此使用该入口启动的服务会返回 404。需要由后端维护者在实际部署的 FastAPI 应用中将该路由挂载到 `/api/v1/text2echarts`，并配置其依赖的数据库、模型和 Dify 服务；本次没有修改 Python 后端。后端 `execution_time` 统计的是生成图表前的 SQL 查询阶段，并非完整生成耗时。

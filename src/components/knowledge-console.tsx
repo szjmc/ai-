@@ -7,7 +7,8 @@ import { UploadDialog } from "./upload-dialog";
 import { ChunkDialog } from "./chunk-dialog";
 import { AssistantDialog } from "./assistant-dialog";
 import { Text2SqlDialog } from "./text2sql-dialog";
-import { ArchiveArt, BrandMark } from "./archive-art";
+import { Text2EchartsDialog } from "./text2echarts-dialog";
+import { BrandMark } from "./archive-art";
 import { createOperator, fetchFileList, fetchOperators, fetchStats, renameOperator, type ListParams } from "@/lib/client-api";
 import { FILE_STATUSES, FILE_TYPES, OPERATORS, STATUS_META, statusLabel, strategyLabel } from "@/lib/constants";
 import { formatBytes, relativeTime, toneFor } from "@/lib/format";
@@ -38,8 +39,7 @@ export function KnowledgeConsole() {
   const [previewFile, setPreviewFile] = useState<FileDict | null>(null);
   const [previewEditMode, setPreviewEditMode] = useState(false);
   const [chunkFile, setChunkFile] = useState<FileDict | null>(null);
-  const [assistantOpen, setAssistantOpen] = useState(false);
-  const [text2SqlOpen, setText2SqlOpen] = useState(false);
+  const [view, setView] = useState<"files" | "assistant" | "sql" | "charts">("files");
   const [uploadOpen, setUploadOpen] = useState(false);
   const [droppedFile, setDroppedFile] = useState<File | null>(null);
   const [highlightId, setHighlightId] = useState<string | null>(null);
@@ -100,7 +100,7 @@ export function KnowledgeConsole() {
     return () => controller.abort();
   }, [revision]);
 
-  const modalOpen = uploadOpen || Boolean(selectedId) || Boolean(previewFile) || Boolean(chunkFile) || assistantOpen || text2SqlOpen;
+  const modalOpen = uploadOpen || Boolean(selectedId) || Boolean(previewFile) || Boolean(chunkFile);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -135,8 +135,8 @@ export function KnowledgeConsole() {
   const openInfo = (file: FileDict) => { closeUpload(); setPreviewFile(null); setSelectedId(file.id); };
   const openChunk = (file: FileDict) => { closeUpload(); setPreviewFile(null); setSelectedId(null); setChunkFile(file); };
   const closeChunk = useCallback(() => setChunkFile(null), []);
-  const changeFilters = (patch: Partial<ListParams>) => setFilters((current) => ({ ...current, ...patch, page: 1 }));
-  const reset = () => { setQuery(""); setFilters(DEFAULT_FILTERS); };
+  const changeFilters = (patch: Partial<ListParams>) => { setView("files"); setFilters((current) => ({ ...current, ...patch, page: 1 })); };
+  const reset = () => { setView("files"); setQuery(""); setFilters(DEFAULT_FILTERS); };
   const clearSearch = () => { setQuery(""); changeFilters({ q: "" }); searchRef.current?.focus(); };
   const collections = stats?.collections || [];
   const typeCounts = useMemo(() => new Map(stats?.types.map((item) => [item.key, item.count]) || []), [stats]);
@@ -147,44 +147,52 @@ export function KnowledgeConsole() {
   return (
     <div className="zhizhan">
       <header className="topbar"><div className="top-inner">
-        <div className="brand"><BrandMark /><div><p className="kicker">Zhizhan Ledger</p><h1>知栈入库台</h1></div></div>
+        <div className="brand"><BrandMark /><div><h1>知栈</h1><p className="brand-subtitle">知识管理工作台</p></div></div>
         <form className="search" role="search" onSubmit={(event) => {
           event.preventDefault(); if (composing) return;
           changeFilters({ q: query.normalize("NFKC").trim() });
         }}>
           <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" strokeWidth="1.5" /><path d="m16 16 4.5 4.5" stroke="currentColor" strokeWidth="1.5" /></svg>
           <label className="sr-only" htmlFor="knowledge-search">搜索知识文件</label>
-          <input ref={searchRef} id="knowledge-search" value={query} maxLength={256} placeholder="搜索文件名、集合或描述" autoComplete="off" onChange={(event) => setQuery(event.target.value)} onCompositionStart={() => setComposing(true)} onCompositionEnd={() => setComposing(false)} onKeyDown={(event) => { if (event.key === "Enter" && event.nativeEvent.isComposing) event.preventDefault(); }} />
+          <input ref={searchRef} id="knowledge-search" value={query} maxLength={256} placeholder="搜索文件名、集合或描述" autoComplete="off" onChange={(event) => { setView("files"); setQuery(event.target.value); }} onCompositionStart={() => setComposing(true)} onCompositionEnd={() => setComposing(false)} onKeyDown={(event) => { if (event.key === "Enter" && event.nativeEvent.isComposing) event.preventDefault(); }} />
           {query && <button type="button" className="search-clear" aria-label="清空搜索" onClick={clearSearch}>×</button>}
           <button type="submit" className="search-submit">搜索</button>
         </form>
         <div className="bucket-pill" title={`MinIO ${stats?.minio_endpoint || "127.0.0.1:9100"}`}><span className="dot" style={{ background: "#c6a36a" }} />{bucket}</div>
-        <button className="btn btn-line sql-entry" type="button" onClick={() => setText2SqlOpen(true)}>Text2SQL 问数</button><button className="btn btn-line ai-entry" type="button" onClick={() => setAssistantOpen(true)}>AI 问答</button><button className="btn btn-primary top-upload" type="button" onClick={() => { setDroppedFile(null); setUploadOpen(true); }}><span aria-hidden="true">＋</span> 上传文件</button>
+        <button className="btn btn-primary top-upload" type="button" onClick={() => { setDroppedFile(null); setUploadOpen(true); }}><span aria-hidden="true">＋</span> 上传文件</button>
       </div></header>
 
       <div className="workspace">
         <aside className="side"><div className="panel side-card">
+          <div className="side-heading">工作空间 <span>WORKSPACE</span></div>
+          <button type="button" className={`side-overview${view === "files" ? " active" : ""}`} aria-current={view === "files" ? "page" : undefined} onClick={() => setView("files")}><span className="side-icon">▦</span><span>知识文件</span>{view === "files" && <span className="side-current">当前</span>}</button>
+          <div className="panel-label"><span>智能工具</span></div>
+          <button aria-label="AI 问答" className={`tool-nav${view === "assistant" ? " active" : ""}`} aria-current={view === "assistant" ? "page" : undefined} type="button" onClick={() => setView("assistant")}><span className="tool-icon">✧</span><span>AI 问答<small>知识问答与检索</small></span><span className="tool-arrow" aria-hidden="true">›</span></button>
+          <button aria-label="Text2SQL 问数" className={`tool-nav sql-entry${view === "sql" ? " active" : ""}`} aria-current={view === "sql" ? "page" : undefined} type="button" onClick={() => setView("sql")}><span className="tool-icon">⌘</span><span>Text2SQL 问数<small>用自然语言查询数据</small></span><span className="tool-arrow" aria-hidden="true">›</span></button>
+          <button aria-label="智能图表" className={`tool-nav chart-entry${view === "charts" ? " active" : ""}`} aria-current={view === "charts" ? "page" : undefined} type="button" onClick={() => setView("charts")}><span className="tool-icon">▥</span><span>智能图表<small>Text2Echarts 数据可视化</small></span><span className="tool-arrow" aria-hidden="true">›</span></button>
+          <div className="side-divider" />
           <div className="panel-label"><span>知识集合</span><span>{collections.length}</span></div>
-          <button className={`nav-btn${!filters.collectionName ? " active" : ""}`} type="button" onClick={() => changeFilters({ collectionName: "" })}><i className="dot" style={{ background: "#1b140f" }} /><span className="nav-label">全部文件</span><span className="count">{stats?.total ?? "—"}</span></button>
-          {collections.map((item) => <button key={item.name} className={`nav-btn${filters.collectionName === item.name ? " active" : ""}`} type="button" onClick={() => changeFilters({ collectionName: item.name })}><i className="dot" style={{ background: toneFor(item.name) }} /><span className="nav-label">{item.name}</span><span className="count">{item.count}</span></button>)}
+          <button className={`nav-btn${view === "files" && !filters.collectionName ? " active" : ""}`} type="button" onClick={() => changeFilters({ collectionName: "" })}><i className="dot" style={{ background: "#1b140f" }} /><span className="nav-label">全部文件</span><span className="count">{stats?.total ?? "—"}</span></button>
+          {collections.map((item) => <button key={item.name} className={`nav-btn${view === "files" && filters.collectionName === item.name ? " active" : ""}`} type="button" onClick={() => changeFilters({ collectionName: item.name })}><i className="dot" style={{ background: toneFor(item.name) }} /><span className="nav-label">{item.name}</span><span className="count">{item.count}</span></button>)}
           <div className="panel-label"><span>文件状态</span></div>
           {FILE_STATUSES.map((status) => <button key={status} className={`nav-btn${filters.status === status ? " active" : ""}`} type="button" onClick={() => changeFilters({ status: filters.status === status ? "" : status })}><span className={`status status-${status}`}>{STATUS_META[status].label}</span><span className="count">{statusCounts.get(status) || 0}</span></button>)}
           <div className="panel-label"><span>文件类型</span></div>
           <div className="type-grid">{FILE_TYPES.map((type) => <button key={type} className={`btn btn-line type-chip${filters.fileType === type ? " on" : ""}`} type="button" aria-pressed={filters.fileType === type} onClick={() => changeFilters({ fileType: filters.fileType === type ? "" : type })}>{type}<span className="count">{typeCounts.get(type) || 0}</span></button>)}</div>
-          <figure className="shelf"><ArchiveArt /><figcaption><strong>让每一份知识，有处可寻</strong><span>文档与图片统一归档，信息与预览各自清晰。</span></figcaption></figure>
-          <p className="note">原文件保留在 MinIO，文件记录存入 MySQL。单文件最大 50MB。</p>
+          <div className="side-footer"><span className="side-footer-icon">◈</span><div><strong>知识管理工作台</strong><p>让知识与数据更有价值</p></div></div>
         </div></aside>
 
         <main className="main">
+          {view === "files" && <>
           {stats?.storage_mode === "local" && <div className="storage-notice" role="status"><span className="dot" style={{ background: "#b8883b" }} />当前未连接你的 MySQL / MinIO。配置里的 127.0.0.1 指的是运行本页面的服务器，不是你的电脑，所以这里看不到你的真实数据，上传的文件也只暂存在本服务器。请在 MySQL（{stats.mysql_db || "test_db"}）与 MinIO（{stats.minio_endpoint || "127.0.0.1:9100"}）所在的机器上运行本项目。</div>}
           {statsError && <div className="storage-notice" role="status">{statsError}<button type="button" className="btn btn-quiet" onClick={() => setRevision((value) => value + 1)}>重试概览</button></div>}
+          <div className="page-intro"><div><div className="breadcrumbs">工作空间 <span>/</span> 知识文件</div><h2>知识文件</h2><p>集中管理企业知识，让信息查找和使用更高效。</p></div><div className="intro-badge"><span>✦</span> 您的知识工作空间</div></div>
           <section className="stats" aria-label="台账概览">
             <div className="stat"><span>文件总数</span><strong>{stats?.total ?? "—"}</strong><em>已归档的知识文件</em></div>
             <div className="stat"><span>知识集合</span><strong>{stats?.collections.length ?? "—"}</strong><em>按主题有序管理</em></div>
             <div className="stat"><span>已激活</span><strong>{stats?.active ?? "—"}</strong><em>{stats?.uploaded ?? "—"} 份待处理</em></div>
             <div className="stat"><span>原文件体积</span><strong className="stat-size">{stats ? formatBytes(stats.bytes) : "—"}</strong><em>{stats?.storage_mode === "local" ? "本服务器暂存文件" : "MinIO 对象存储"}</em></div>
           </section>
-          <div className="lede"><div><p className="kicker">Your knowledge, in order</p><h2>{filters.collectionName || "全部知识文件"}</h2><p>点击文件名打开大屏预览，或通过「信息」管理描述、状态与分块策略。</p></div></div>
+          <div className="lede"><div><p className="kicker">KNOWLEDGE LIBRARY</p><h2>{filters.collectionName || "全部知识文件"}</h2><p>点击文件名打开大屏预览，或通过「信息」管理描述、状态与分块策略。</p></div></div>
           <div className="toolbar">
             <p role="status" aria-live="polite">{loading ? (filters.q ? `正在搜索「${filters.q}」…` : "正在读取文件…") : error ? "文件列表未加载" : filters.q ? `「${filters.q}」· 找到 ${pageInfo?.total || 0} 份文件` : `共 ${pageInfo?.total || 0} 份文件`}</p>
             <div className="toolbar-actions"><button className="btn btn-quiet" type="button" onClick={() => setRevision((value) => value + 1)}>刷新</button><label><span className="sr-only">文件排序</span><select value={filters.sort} onChange={(event) => changeFilters({ sort: event.target.value })}><option value="created_desc">最近入库</option><option value="created_asc">最早入库</option><option value="name">按文件名</option><option value="size">按体积</option></select></label></div>
@@ -213,6 +221,10 @@ export function KnowledgeConsole() {
             {!loading && !error && pageInfo && pageInfo.total > 0 && <div className="pager"><span className="muted">第 {pageInfo.page} / {pageInfo.pages} 页 · 共 {pageInfo.total} 份</span><div className="pager-actions"><button className="btn btn-line" type="button" disabled={pageInfo.page <= 1} onClick={() => setFilters((current) => ({ ...current, page: pageInfo.page - 1 }))}>上一页</button><button className="btn btn-line" type="button" disabled={pageInfo.page >= pageInfo.pages} onClick={() => setFilters((current) => ({ ...current, page: pageInfo.page + 1 }))}>下一页</button></div></div>}
           </section>
           <p className="ledger-note">原文件与文件信息独立管理。图片支持 PNG、JPG、JPEG、WebP 和 GIF。</p>
+          </>}
+          <AssistantDialog open={view === "assistant"} onClose={() => setView("files")} onToast={pushToast} />
+          <Text2SqlDialog open={view === "sql"} onClose={() => setView("files")} onToast={pushToast} />
+          <Text2EchartsDialog open={view === "charts"} onClose={() => setView("files")} />
         </main>
       </div>
       {dragging && <div className="drop-veil"><div><strong>将文件放到这里</strong><p>松开后选择集合，确认再上传。</p></div></div>}
@@ -242,8 +254,6 @@ export function KnowledgeConsole() {
         }}
         onToast={pushToast}
       />
-      <AssistantDialog open={assistantOpen} onClose={() => setAssistantOpen(false)} onToast={pushToast} />
-      <Text2SqlDialog open={text2SqlOpen} onClose={() => setText2SqlOpen(false)} onToast={pushToast} />
       <ChunkDialog file={chunkFile} storageMode={stats?.storage_mode} onClose={closeChunk} onToast={pushToast} />
       <FilePreview
         file={previewFile}

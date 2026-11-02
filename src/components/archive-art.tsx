@@ -1,10 +1,8 @@
 export function BrandMark() {
   return (
-    <svg className="brand-mark" viewBox="0 0 56 56" role="img" aria-label="知栈印记">
-      <circle cx="28" cy="28" r="27" fill="#27190f" stroke="#c6a36a" />
-      <circle cx="28" cy="28" r="22" fill="none" stroke="#c44536" strokeWidth="1.5" />
-      <path d="M14 18c5-2 9-1 14 2 5-3 9-4 14-2v21c-5-2-9-1-14 2-5-3-9-4-14-2zM28 20v21M18 24l6 2M18 29l6 2M32 26l6-2M32 31l6-2" fill="none" stroke="#e5c999" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M21 12h14" stroke="#c44536" strokeWidth="2" />
+    <svg className="brand-mark" viewBox="0 0 40 40" role="img" aria-label="知栈标志">
+      <rect width="40" height="40" rx="11" fill="#4c6ee8" />
+      <path d="M10 12.5c3.8-1.2 7-.5 10 1.5 3-2 6.2-2.7 10-1.5v15c-3.8-1.2-7-.5-10 1.5-3-2-6.2-2.7-10-1.5zM20 14v15M13.5 17l3.5 1M23 18l3.5-1M13.5 21l3.5 1M23 22l3.5-1" fill="none" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

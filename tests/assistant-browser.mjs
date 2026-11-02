@@ -224,7 +224,7 @@ try {
   await expect(alert).toContainText('日志');
   console.log('PASS: upstream 500 is surfaced as a backend-side problem');
 
-  await dialog2.getByRole('button', { name: '关闭问答窗口' }).click();
+  await dialog2.getByRole('button', { name: '返回知识文件' }).click();
   await expect(dialog2).toBeHidden();
   await page.unroute('**/api/v1/chat/status');
 
