@@ -19,7 +19,6 @@ import type {
   TrainingCategory,
   TrainingCorpusData,
 } from "@/lib/types";
-import { useModalDialog } from "./use-modal-dialog";
 
 type Props = {
   open: boolean;
@@ -163,7 +162,6 @@ function rowsToCsv(rows: Record<string, unknown>[]): string {
 }
 
 export function Text2SqlDialog({ open, onClose, onToast }: Props) {
-  const dialog = useModalDialog(open);
   const [tab, setTab] = useState<Tab>("query");
   const [status, setStatus] = useState<Text2SqlStatus | null>(null);
   const [corpus, setCorpus] = useState<TrainingCorpusData | null>(null);
@@ -518,15 +516,7 @@ export function Text2SqlDialog({ open, onClose, onToast }: Props) {
   const counts = corpus?.counts || { ddl: 0, document: 0, sql: 0, total: 0 };
 
   return (
-    <dialog
-      ref={dialog}
-      className="t2s-dialog"
-      aria-labelledby="t2s-dialog-title"
-      onCancel={(e) => {
-        e.preventDefault();
-        close();
-      }}
-    >
+    <section className="t2s-dialog workspace-tool" aria-labelledby="t2s-dialog-title">
       <header className="t2s-header">
         <div>
           <p className="kicker">Vanna · Text2SQL &amp; JSON Training</p>
@@ -543,8 +533,8 @@ export function Text2SqlDialog({ open, onClose, onToast }: Props) {
               {dbOnline ? "MySQL 已连接" : "MySQL 未连接"}
             </span>
           )}
-          <button className="icon-btn" type="button" aria-label="关闭问数窗口" onClick={close}>
-            ×
+          <button className="icon-btn" type="button" aria-label="返回知识文件" onClick={close}>
+            ←
           </button>
         </div>
       </header>
@@ -1447,6 +1437,6 @@ export function Text2SqlDialog({ open, onClose, onToast }: Props) {
           )}
         </section>
       </div>
-    </dialog>
+    </section>
   );
 }
