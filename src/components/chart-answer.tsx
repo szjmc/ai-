@@ -24,20 +24,17 @@ export type ChartReport = {
   insight_tone?: "warn" | "info" | string | null;
 };
 
+/** Fields the backend sends for display; no SQL, raw rows or workflow payload. */
 export type ChartResult = {
   success: boolean;
   question: string;
   chart_type?: string | null;
-  generated_sql?: string | null;
-  result?: unknown;
-  rows?: Record<string, string>[] | null;
   echarts_option?: Record<string, unknown> | null;
   table?: ChartTable | null;
   report?: ChartReport | null;
   title?: string | null;
   subtitle?: string | null;
   error?: string | null;
-  execution_time?: number;
 };
 
 /** One assistant answer: chart card, data table, insight call-out and report. */
@@ -46,13 +43,9 @@ export function ChartAnswer({ result }: { result: ChartResult }) {
   const table = result.table;
   const report = result.report;
   const title = result.title || result.question;
-  const seconds = typeof result.execution_time === "number" ? result.execution_time.toFixed(2) : null;
 
   return <div className="ana-result">
-    <div className="ana-result-meta">
-      <strong>{title}</strong>
-      {seconds && <span>SQL 查询耗时 {seconds} 秒</span>}
-    </div>
+    <p className="ana-result-title">{title}</p>
 
     {option
       ? <section className="ana-card ana-chart-card" aria-label="图表">
@@ -60,8 +53,8 @@ export function ChartAnswer({ result }: { result: ChartResult }) {
         <EChart option={option} label={`图表：${title}`} />
       </section>
       : <div className="ana-error ana-no-option" role="status">
-        <strong>未识别到可渲染的 ECharts 配置</strong>
-        <p>后端未能从工作流返回中解析出图表配置，可展开下方原始结果检查。</p>
+        <strong>这次没有生成图表</strong>
+        <p>可以换一种问法，或调整图表类型后重新提问。</p>
       </div>}
 
     {table && table.rows.length > 0 && <section className="ana-card" aria-label="表格展示">
@@ -87,10 +80,5 @@ export function ChartAnswer({ result }: { result: ChartResult }) {
       </div>)}</div>
       <p className="ana-summary">{report.summary}</p>
     </section>}
-
-    <div className="ana-details">
-      {result.generated_sql && <details><summary>查看生成的 SQL</summary><pre>{result.generated_sql}</pre></details>}
-      <details open={!option}><summary>查看原始结果</summary><pre>{JSON.stringify(result.result, null, 2) ?? "无结果"}</pre></details>
-    </div>
   </div>;
 }

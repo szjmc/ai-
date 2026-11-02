@@ -57,7 +57,7 @@ export function Text2EchartsDialog({ open, onClose }: { open: boolean; onClose: 
         body: JSON.stringify({ question: text, echarts_type: type, auto_execute: true, limit: 10 }),
       });
       const data = await response.json() as ChartResult & { detail?: unknown };
-      if (!response.ok || !data.success) throw new Error(data.error || "图表生成失败，请检查服务状态。");
+      if (!response.ok || !data.success) throw new Error(data.error || "本次分析未能完成，请稍后重试。");
       setOnline("on");
       setTurns((current) => current.map((turn) => (turn.id === id ? { ...turn, state: "ok", result: data } : turn)));
     } catch (caught) {
@@ -107,7 +107,7 @@ export function Text2EchartsDialog({ open, onClose }: { open: boolean; onClose: 
         <div className="ana-msg ana-msg-bot">
           <span className="ana-avatar" aria-hidden="true">✦</span>
           <div className="ana-answer">
-            <p className="ana-greeting">你好，我是数据分析助手。用一句话描述你想看的数据，我会生成 SQL、图表、数据表和要点报告。</p>
+            <p className="ana-greeting">你好，我是数据分析助手。用一句话描述你想看的数据，我会生成图表、数据表和要点报告。</p>
             {suggestions.length > 0 && <div className="ana-suggestions">{suggestions.map((item) => (
               <button key={item} type="button" className="ana-chip" onClick={() => { setQuestion(item); inputRef.current?.focus(); }}>{item}</button>
             ))}</div>}
@@ -122,7 +122,7 @@ export function Text2EchartsDialog({ open, onClose }: { open: boolean; onClose: 
           <div className="ana-answer">
             {turn.state === "loading" && <div className="ana-loading" role="status">
               <span className="loading-ring" aria-hidden="true" />
-              <div><strong>正在分析数据</strong><p>生成 SQL → 执行查询 → 生成图表与报告，请稍候。</p></div>
+              <div><strong>正在分析数据</strong><p>正在整理图表、数据表与报告，请稍候。</p></div>
             </div>}
             {turn.state === "error" && <div className="ana-error" role="alert">
               <strong>本次分析没有完成</strong><p>{turn.error}</p>
@@ -164,7 +164,7 @@ export function Text2EchartsDialog({ open, onClose }: { open: boolean; onClose: 
           </div>
         </div>
       </div>
-      <p className="ana-hint">按 Enter 发送，Shift + Enter 换行<span>·</span>生成过程包含 SQL 查询与图表配置生成，请核对生成的 SQL 和结果。</p>
+      <p className="ana-hint">按 Enter 发送，Shift + Enter 换行<span>·</span>数据统计与图表生成需要一点时间，请稍候。</p>
     </form>
   </section>;
 }

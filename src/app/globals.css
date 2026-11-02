@@ -718,9 +718,7 @@ body{background:#f5f7fb}.topbar{background:#fff;color:var(--ink);border-bottom:1
 .ana-error p{margin:0;font-size:12px;line-height:1.7;color:#7d5b52}
 .ana-no-option{width:100%;min-height:120px;justify-content:center}
 .ana-result{display:flex;flex-direction:column;gap:14px;min-width:0}
-.ana-result-meta{display:flex;align-items:baseline;justify-content:space-between;gap:12px;font-size:13px}
-.ana-result-meta strong{font-weight:600;min-width:0}
-.ana-result-meta span{flex:none;font-size:11px;color:#9b8d80}
+.ana-result-title{margin:0;font-size:13.5px;font-weight:600;line-height:1.6}
 .ana-card{min-width:0;border:1px solid var(--line);border-radius:14px;background:#fffdf9;box-shadow:0 6px 18px rgba(36,22,14,.05);overflow:hidden}
 .ana-card-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#fffdf9,#fbf5ec)}
 .ana-card-head h3{margin:0;display:flex;align-items:center;gap:6px;font-size:13px}
@@ -746,9 +744,6 @@ body{background:#f5f7fb}.topbar{background:#fff;color:var(--ink);border-bottom:1
 .ana-metric strong{font-family:var(--serif);font-size:19px;line-height:1.2;font-variant-numeric:tabular-nums}
 .ana-metric em{font-style:normal;font-size:11px;color:#9b8d80;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ana-summary{margin:0;padding:12px 16px 16px;font-size:12.5px;line-height:1.85;color:#4a3b2f}
-.ana-details{padding-top:2px;font-size:12px}
-.ana-details summary{cursor:pointer;padding:8px 2px;color:var(--ink-soft)}
-.ana-details pre{max-height:230px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;margin:0 0 6px;padding:12px;border-radius:10px;background:#f8f1e6;color:#5a4a3c}
 .ana-reset{padding:6px 10px;font-size:12px;border-radius:9px}
 .ana-reset:hover{background:rgba(36,22,14,.06)}
 .ana-composer{flex:none;padding:12px 22px 14px;border-top:1px solid var(--line);background:#faf4ea}
@@ -767,4 +762,4 @@ body{background:#f5f7fb}.topbar{background:#fff;color:var(--ink);border-bottom:1
 .ana-send{padding:8px 18px;border-radius:10px}
 .ana-hint{display:flex;flex-wrap:wrap;gap:6px;margin:8px 2px 0;font-size:11px;color:#a2937f}
 .ana-hint span{color:#cbbdab}
-@media(max-width:860px){.ana-shell{height:auto;min-height:0;max-height:none}.ana-scroll{padding:16px 14px 8px;max-height:none}.ana-header{padding:14px 16px}.ana-brand p{display:none}.ana-composer{padding:10px 14px 12px}.ana-msg-user p{max-width:86%}.ana-chart-canvas{height:250px}.ana-metrics{grid-template-columns:1fr}.ana-result-meta{flex-direction:column;align-items:flex-start;gap:4px}}
+@media(max-width:860px){.ana-shell{height:auto;min-height:0;max-height:none}.ana-scroll{padding:16px 14px 8px;max-height:none}.ana-header{padding:14px 16px}.ana-brand p{display:none}.ana-composer{padding:10px 14px 12px}.ana-msg-user p{max-width:86%}.ana-chart-canvas{height:250px}.ana-metrics{grid-template-columns:1fr}}

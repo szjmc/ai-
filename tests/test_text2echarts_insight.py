@@ -237,21 +237,47 @@ class RouterTests(unittest.TestCase):
         self.assertEqual(data["table"]["rows"][1], ["冠心病", 9, "8.6%"])
         self.assertEqual(data["report"]["metrics"][0]["value"], "105")
         self.assertTrue(data["report"]["insight"])
-        self.assertEqual(data["rows"][0]["疾病类型"], "肿瘤")
+        # SQL、原始行、Dify 原始响应等调试信息不下发浏览器。
+        for internal in ("generated_sql", "rows", "result", "debug"):
+            self.assertNotIn(internal, data)
+        serialised = json.dumps(data, ensure_ascii=False)
+        for leaked in ("SELECT", "DIFY_API_KEY", "task_id", "message_id", "usage"):
+            self.assertNotIn(leaked, serialised)
 
     def test_generate_rejects_unsupported_chart_type(self):
         response = self.post(echarts_type="散点图")
         self.assertEqual(response.status_code, 400)
         self.assertIn("柱状图、折线图、饼图", response.json()["detail"])
 
-    def test_generate_reports_workflow_failure(self):
+    def test_generate_reports_workflow_failure_without_internals(self):
         with patch("app.routers.text2echarts_router.vn.generate_sql", return_value="SELECT 1"), \
              patch("app.routers.text2echarts_router.vn.execute_sql", return_value=list(ROWS)), \
              patch("app.routers.text2echarts_router.execute_workflow", return_value=None):
             response = self.post()
         data = response.json()
         self.assertFalse(data["success"])
-        self.assertIn("DIFY_API_KEY", data["error"])
+        self.assertEqual(data["error"], "分析服务暂时不可用，请稍后重试。")
+        self.assertNotIn("DIFY_API_KEY", data["error"])
+
+    def test_generate_hides_sql_errors(self):
+        with patch("app.routers.text2echarts_router.vn.generate_sql", return_value="SELECT 1"), \
+             patch("app.routers.text2echarts_router.vn.execute_sql",
+                   side_effect=RuntimeError("Table 'test_db.user_health_risk' doesn't exist")):
+            response = self.post()
+        data = response.json()
+        self.assertFalse(data["success"])
+        self.assertEqual(data["error"], "本次分析未能完成，请调整问题后重试。")
+        self.assertNotIn("test_db", json.dumps(data, ensure_ascii=False))
+
+    def test_generate_reports_empty_result_set(self):
+        with patch("app.routers.text2echarts_router.vn.generate_sql", return_value="SELECT 1"), \
+             patch("app.routers.text2echarts_router.vn.execute_sql", return_value=[]), \
+             patch("app.routers.text2echarts_router.execute_workflow") as workflow:
+            response = self.post()
+        data = response.json()
+        self.assertFalse(data["success"])
+        self.assertEqual(data["error"], "没有查询到符合条件的数据，请调整问题后重试。")
+        workflow.assert_not_called()
 
 
 if __name__ == "__main__":
