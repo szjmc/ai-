@@ -35,6 +35,7 @@
 
 - `/api/diagnostics`：检查 MySQL/MinIO 连通性，不返回密码或密钥。
 - `node --import tsx --test tests/files.test.ts tests/office-preview.test.ts`：搜索、对象路径、图片格式、PDF 范围请求，以及 DOCX（大图不截断、代码块）和 XLSX（真实行列号、合并单元格、隐藏表/行/列、格式填充）的回归测试。
+- `node --import tsx --test tests/echarts-option.test.ts`：智能图表从带 echarts / json 语言标记的代码块、纯文本 JSON 和 outputs/data 包装中提取 ECharts 配置的回归测试。
 - `node tests/office-browser.mjs`、`node tests/browser-smoke.mjs`：浏览器端回归（需先启动服务，用 `TEST_BASE_URL` 指定地址）。测试自带数据并在结束时清理。
 - `npx next typegen`、`npm exec tsc -- --noEmit`、`npm run build`：类型与生产构建检查。
 
@@ -42,6 +43,6 @@
 
 ## 智能图表（Text2Echarts）
 
-工作台「智能图表」支持输入问题、选择图表类型，调用 FastAPI 生成 SQL 和 ECharts 配置，并展示图表、SQL 与原始结果。前端通过同源 Next.js 路由转发到 `FASTAPI_URL`（默认 `http://127.0.0.1:8018`）的 `/api/v1/text2echarts/generate`，不在浏览器中暴露后端地址或密钥。仅解析 JSON 格式的图表配置，不执行生成的 JavaScript；无法识别时保留原始结果供检查。
+工作台「智能图表」支持输入问题、选择图表类型，调用 FastAPI 生成 SQL 和 ECharts 配置，并展示图表、SQL 与原始结果。前端通过同源 Next.js 路由转发到 `FASTAPI_URL`（默认 `http://127.0.0.1:8018`）的 `/api/v1/text2echarts/generate`，不在浏览器中暴露后端地址或密钥。解析时兼容 Dify 常见的 echarts / json 代码块、代码块前后的说明文字、字符串化的 JSON，以及 `answer`/`outputs`/`data` 等包装字段（见 `src/lib/echarts-option.ts`）；只解析 JSON，不执行生成的 JavaScript，无法识别时保留原始结果供检查。
 
-**部署注意：**当前仓库的 `backend/main.py` 没有挂载 `Text2EchartsRouter`，因此使用该入口启动的服务会返回 404。需要由后端维护者在实际部署的 FastAPI 应用中将该路由挂载到 `/api/v1/text2echarts`，并配置其依赖的数据库、模型和 Dify 服务；本次没有修改 Python 后端。后端 `execution_time` 统计的是生成图表前的 SQL 查询阶段，并非完整生成耗时。
+**部署注意：**`backend/main.py` 已把 `Text2EchartsRouter` 挂载到 `/api/v1/text2echarts`；若使用自己的 FastAPI 入口启动，需要同样挂载该路由并配置其依赖的数据库、模型和 Dify 服务。后端 `execution_time` 统计的是生成图表前的 SQL 查询阶段，并非完整生成耗时。

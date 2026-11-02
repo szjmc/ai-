@@ -41,6 +41,15 @@ app.include_router(ChatBotQueryRouter()._register_routes(), prefix="/api/v1/chat
 app.include_router(ConfigRouter()._register_routes(), prefix="/api/v1/config")
 app.include_router(AsrRouter()._register_routes(), prefix="/api/v1/asr")
 app.include_router(Text2SqlRouter()._register_routes(), prefix="/api/v1/text2sql")
+
+# Text2Echarts 依赖 Dify 客户端（requests / DIFY_API_KEY / DIFY_BASE_URL）等可选配置。
+# 单独 try 包裹，避免图表功能缺失时连带整个后端无法启动。
+try:
+    from app.routers.text2echarts_router import Text2EchartsRouter
+    app.include_router(Text2EchartsRouter()._register_routes(), prefix="/api/v1/text2echarts")
+    logger.info("Text2Echarts 路由已挂载: /api/v1/text2echarts")
+except Exception as exc:  # pragma: no cover - 依赖缺失或配置错误时降级
+    logger.warning(f"Text2Echarts 路由未挂载，工作台智能图表将不可用: {exc}")
 # 健康检查端点
 
 @app.get("/")

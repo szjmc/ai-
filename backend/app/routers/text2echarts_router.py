@@ -78,6 +78,10 @@ class Text2EchartsRouter(BaseRouter):
             new_params = f"{json.dumps(format_result, ensure_ascii=False, indent=2)} {request.echarts_type}"
             logger.info(f"生成结果：{new_params}")
             echarts_result = execute_workflow(new_params)
+            # execute_workflow 在缺少 DIFY_API_KEY 或工作流失败时会返回 None / 空结果，
+            # 直接包装会让前端显示“未识别到可渲染的 ECharts 配置”，这里显式报错更易排查。
+            if not echarts_result:
+                raise RuntimeError("图表工作流未返回内容，请检查 DIFY_API_KEY、DIFY_BASE_URL 与 Dify 应用状态")
             format_output = [echarts_result]
             logger.info(f"生成echarts结果：{format_output}")
             return QueryResponse(

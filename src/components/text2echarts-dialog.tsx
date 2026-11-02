@@ -2,29 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { EChartsType, EChartsOption } from "echarts";
+import { extractEchartsOption } from "@/lib/echarts-option";
 
 type Result = { success: boolean; question: string; generated_sql?: string | null; result?: unknown; error?: string | null; execution_time?: number };
-
-// Workflow results may contain a JSON option directly or inside Dify's answer / outputs.
-// Deliberately do not evaluate generated JavaScript or formatter functions.
-function findOption(value: unknown, depth = 0): Record<string, unknown> | null {
-  if (depth > 8 || value == null) return null;
-  if (typeof value === "string") {
-    const text = value.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-    try { return findOption(JSON.parse(text), depth + 1); } catch { return null; }
-  }
-  if (Array.isArray(value)) {
-    for (const item of value) { const found = findOption(item, depth + 1); if (found) return found; }
-    return null;
-  }
-  if (typeof value !== "object") return null;
-  const object = value as Record<string, unknown>;
-  if (object.series && (Array.isArray(object.series) || typeof object.series === "object")) return object;
-  for (const key of ["option", "options", "answer", "outputs", "data", "result", "text"]) {
-    const found = findOption(object[key], depth + 1); if (found) return found;
-  }
-  return null;
-}
 
 export function Text2EchartsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const chartNode = useRef<HTMLDivElement>(null);
@@ -34,7 +14,7 @@ export function Text2EchartsDialog({ open, onClose }: { open: boolean; onClose: 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<Result | null>(null);
-  const option = result ? findOption(result.result) : null;
+  const option = result ? extractEchartsOption(result.result) : null;
   useEffect(() => {
     if (!open || !option || !chartNode.current) return;
     let disposed = false;
