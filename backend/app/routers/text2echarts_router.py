@@ -27,6 +27,8 @@ class QueryResponse(BaseModel):
     question: str
     generated_sql: Optional[str] = None
     result: Optional[List[Dict]] = None
+    # SQL 查询结果原样返回，前端用它生成数据表格；result 里是 Dify 工作流原始响应。
+    rows: Optional[List[Dict[str, str]]] = None
     error: Optional[str] = None
     execution_time: float
 
@@ -84,11 +86,13 @@ class Text2EchartsRouter(BaseRouter):
                 raise RuntimeError("图表工作流未返回内容，请检查 DIFY_API_KEY、DIFY_BASE_URL 与 Dify 应用状态")
             format_output = [echarts_result]
             logger.info(f"生成echarts结果：{format_output}")
+            rows = format_result if isinstance(format_result, list) and format_result else None
             return QueryResponse(
                 success=True,
                 question=request.question,
                 generated_sql=generated_sql,
                 result=format_output,
+                rows=rows,
                 execution_time=execution_time
             )
 
