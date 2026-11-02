@@ -1,0 +1,13 @@
+{
+  "collection_name": "知识文件所属集合",
+  "file_name": "对象桶中的存储名",
+  "file_type": "文件后缀",
+  "minio_path": "对象存储路径",
+  "chunk_strategy": "文档分块策略，默认 adaptive",
+  "status": {
+    "uploaded": "已上传，待处理",
+    "active": "已激活",
+    "inactive": "未激活",
+    "archived": "已归档"
+  }
+}

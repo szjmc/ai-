@@ -1,0 +1,87 @@
+2026-10-26 20:23:01,493 - INFO - file_handle_router.py:34 - Initializing FileHandleRouter
+2026-10-26 20:23:01,493 - INFO - base_router.py:13 - running BaseRouter
+2026-10-26 20:23:03,396 - INFO - file_handle_router.py:34 - Initializing FileHandleRouter
+2026-10-26 20:23:03,396 - INFO - base_router.py:13 - running BaseRouter
+2026-10-26 20:23:03,523 - INFO - file_handle_router.py:34 - Initializing FileHandleRouter
+2026-10-26 20:23:03,523 - INFO - base_router.py:13 - running BaseRouter
+2026-10-26 20:23:03,598 - INFO - main.py:309 - 5 changes detected
+2026-10-26 20:45:25,764 - INFO - main.py:309 - 1 change detected
+2026-10-26 20:50:18,991 - INFO - main.py:309 - 1 change detected
+2026-10-26 20:53:44,956 - INFO - main.py:309 - 1 change detected
+2026-10-26 20:53:45,108 - INFO - main.py:309 - 1 change detected
+2026-10-26 20:53:46,822 - INFO - main.py:309 - 1 change detected
+2026-10-26 20:54:42,960 - INFO - main.py:309 - 1 change detected
+2026-10-26 20:54:43,163 - INFO - main.py:309 - 1 change detected
+2026-10-26 20:54:44,024 - INFO - main.py:309 - 1 change detected
+2026-10-26 20:54:44,125 - INFO - main.py:309 - 1 change detected
+2026-10-26 20:59:22,610 - INFO - main.py:309 - 1 change detected
+2026-10-26 20:59:23,023 - INFO - main.py:309 - 1 change detected
+2026-10-26 20:59:24,284 - INFO - main.py:309 - 1 change detected
+2026-10-26 21:21:51,033 - INFO - main.py:309 - 1 change detected
+2026-10-26 21:21:51,539 - INFO - main.py:309 - 1 change detected
+2026-10-26 21:21:52,548 - INFO - main.py:309 - 1 change detected
+2026-10-26 21:23:25,419 - INFO - main.py:309 - 1 change detected
+2026-10-26 21:27:51,443 - INFO - main.py:309 - 1 change detected
+2026-10-26 21:28:55,068 - INFO - file_handler.py:17 - Uploading file
+2026-10-26 21:28:55,069 - INFO - file_handle_router.py:71 - KB_BUCKET_NAME:knowledge-base
+2026-10-26 21:28:55,074 - INFO - file_handler.py:86 - 生成MinIO唯一文件名：FastAPI入门_1764d6ac.pdf
+2026-10-26 21:28:55,181 - INFO - minio_client.py:141 - 文件上传成功: knowledge-base/FastAPI入门_1764d6ac.pdf
+2026-10-26 21:28:55,182 - INFO - knowledge_file_service.py:20 - 保存新知识文件
+2026-10-26 21:28:55,293 - INFO - knowledge_file_service.py:27 - 知识文件保存成功! ID: 9b4daf7d-8325-4a68-a2fc-6149aa0792b7
+2026-10-26 21:28:55,294 - INFO - file_handle_router.py:89 - Uploaded knowledge file: 9b4daf7d-8325-4a68-a2fc-6149aa0792b7
+2026-10-26 21:38:07,347 - INFO - file_handler.py:17 - Uploading file
+2026-10-26 21:38:07,347 - INFO - file_handle_router.py:71 - KB_BUCKET_NAME:knowledge-base
+2026-10-26 21:38:07,347 - INFO - file_handler.py:86 - 生成MinIO唯一文件名：营养筛查-BMI_c5890dee.xlsx
+2026-10-26 21:38:07,423 - INFO - minio_client.py:141 - 文件上传成功: knowledge-base/营养筛查-BMI_c5890dee.xlsx
+2026-10-26 21:38:07,424 - INFO - knowledge_file_service.py:20 - 保存新知识文件
+2026-10-26 21:38:07,431 - INFO - knowledge_file_service.py:27 - 知识文件保存成功! ID: 6617d93e-0ee4-4b3c-a934-d791c70a993e
+2026-10-26 21:38:07,431 - INFO - file_handle_router.py:89 - Uploaded knowledge file: 6617d93e-0ee4-4b3c-a934-d791c70a993e
+2026-10-26 21:42:37,626 - INFO - main.py:309 - 1 change detected
+2026-10-26 21:45:15,169 - INFO - file_handler.py:17 - Uploading file
+2026-10-26 21:45:15,169 - INFO - file_handle_router.py:71 - KB_BUCKET_NAME:knowledge-base
+2026-10-26 21:45:15,169 - INFO - file_handler.py:86 - 生成MinIO唯一文件名：老师提问30题含代码_18e5ef9a.md
+2026-10-26 21:45:15,217 - INFO - minio_client.py:141 - 文件上传成功: knowledge-base/老师提问30题含代码_18e5ef9a.md
+2026-10-26 21:45:15,217 - INFO - knowledge_file_service.py:20 - 保存新知识文件
+2026-10-26 21:45:15,227 - INFO - knowledge_file_service.py:27 - 知识文件保存成功! ID: 16c14c6b-4316-460f-b750-fad220a66d72
+2026-10-26 21:45:15,227 - INFO - file_handle_router.py:89 - Uploaded knowledge file: 16c14c6b-4316-460f-b750-fad220a66d72
+2026-10-26 21:45:55,390 - INFO - file_handler.py:17 - Uploading file
+2026-10-26 21:45:55,390 - INFO - file_handle_router.py:71 - KB_BUCKET_NAME:knowledge-base
+2026-10-26 21:45:55,390 - INFO - file_handler.py:86 - 生成MinIO唯一文件名：Langchain课程讲解v1.0_0dc8fcd2.docx
+2026-10-26 21:45:55,597 - INFO - minio_client.py:141 - 文件上传成功: knowledge-base/Langchain课程讲解v1.0_0dc8fcd2.docx
+2026-10-26 21:45:55,598 - INFO - knowledge_file_service.py:20 - 保存新知识文件
+2026-10-26 21:45:55,604 - INFO - knowledge_file_service.py:27 - 知识文件保存成功! ID: 877d7725-ed9e-4d9f-baf9-9774d9e29368
+2026-10-26 21:45:55,605 - INFO - file_handle_router.py:89 - Uploaded knowledge file: 877d7725-ed9e-4d9f-baf9-9774d9e29368
+2026-10-26 21:46:30,317 - INFO - file_handler.py:17 - Uploading file
+2026-10-26 21:46:30,317 - INFO - file_handle_router.py:71 - KB_BUCKET_NAME:knowledge-base
+2026-10-26 21:46:30,317 - INFO - file_handler.py:86 - 生成MinIO唯一文件名：PyMsql与bcrypt_90d5e9e6.md
+2026-10-26 21:46:30,402 - INFO - minio_client.py:141 - 文件上传成功: knowledge-base/PyMsql与bcrypt_90d5e9e6.md
+2026-10-26 21:46:30,403 - INFO - knowledge_file_service.py:20 - 保存新知识文件
+2026-10-26 21:46:30,410 - INFO - knowledge_file_service.py:27 - 知识文件保存成功! ID: 98a7a268-234a-4c04-a1c6-171a340187f5
+2026-10-26 21:46:30,410 - INFO - file_handle_router.py:89 - Uploaded knowledge file: 98a7a268-234a-4c04-a1c6-171a340187f5
+2026-10-26 21:47:12,283 - INFO - file_handler.py:17 - Uploading file
+2026-10-26 21:47:12,283 - INFO - file_handle_router.py:71 - KB_BUCKET_NAME:knowledge-base
+2026-10-26 21:47:12,283 - INFO - file_handler.py:86 - 生成MinIO唯一文件名：数据表字段参考_e3252485.txt
+2026-10-26 21:47:12,354 - INFO - minio_client.py:141 - 文件上传成功: knowledge-base/数据表字段参考_e3252485.txt
+2026-10-26 21:47:12,355 - INFO - knowledge_file_service.py:20 - 保存新知识文件
+2026-10-26 21:47:12,362 - INFO - knowledge_file_service.py:27 - 知识文件保存成功! ID: 169bddd0-f71d-42bf-af6d-03c791cf1167
+2026-10-26 21:47:12,362 - INFO - file_handle_router.py:89 - Uploaded knowledge file: 169bddd0-f71d-42bf-af6d-03c791cf1167
+2026-10-26 21:47:38,017 - INFO - file_handler.py:17 - Uploading file
+2026-10-26 21:47:38,018 - INFO - file_handle_router.py:71 - KB_BUCKET_NAME:knowledge-base
+2026-10-26 21:47:38,018 - INFO - file_handler.py:86 - 生成MinIO唯一文件名：Script-5_3__96eebf6e.sql
+2026-10-26 21:47:38,096 - INFO - minio_client.py:141 - 文件上传成功: knowledge-base/Script-5_3__96eebf6e.sql
+2026-10-26 21:47:38,097 - INFO - knowledge_file_service.py:20 - 保存新知识文件
+2026-10-26 21:47:38,105 - INFO - knowledge_file_service.py:27 - 知识文件保存成功! ID: 8f1dbf6f-5e23-4b86-9beb-9a109d32fa3a
+2026-10-26 21:47:38,105 - INFO - file_handle_router.py:89 - Uploaded knowledge file: 8f1dbf6f-5e23-4b86-9beb-9a109d32fa3a
+2026-10-26 22:20:06,004 - INFO - main.py:309 - 1 change detected
+2026-10-26 22:33:58,300 - INFO - file_handler.py:17 - Uploading file
+2026-10-26 22:33:58,301 - INFO - file_handle_router.py:71 - KB_BUCKET_NAME:knowledge-base
+2026-10-26 22:33:58,301 - INFO - file_handler.py:86 - 生成MinIO唯一文件名：01_基础版功能需求文档_39da2132.docx
+2026-10-26 22:33:58,352 - INFO - minio_client.py:141 - 文件上传成功: knowledge-base/01_基础版功能需求文档_39da2132.docx
+2026-10-26 22:33:58,353 - INFO - knowledge_file_service.py:20 - 保存新知识文件
+2026-10-26 22:33:58,363 - INFO - knowledge_file_service.py:27 - 知识文件保存成功! ID: 587d8f23-cc5a-47b7-a062-c0c7f4720b78
+2026-10-26 22:33:58,363 - INFO - file_handle_router.py:89 - Uploaded knowledge file: 587d8f23-cc5a-47b7-a062-c0c7f4720b78
+2026-10-26 22:41:39,116 - INFO - main.py:309 - 1 change detected
+2026-10-26 22:45:49,369 - INFO - main.py:309 - 1 change detected
+2026-10-26 22:46:00,436 - INFO - main.py:309 - 1 change detected
+2026-10-26 22:52:37,203 - INFO - main.py:309 - 1 change detected
+2026-10-27 11:04:32,462 - INFO - main.py:309 - 1 change detected

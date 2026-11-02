@@ -1,0 +1,38 @@
+{
+  "name": "zhizhan-minio-mysql-console",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@playwright/test": "^1.64.1",
+    "@types/sanitize-html": "^2.16.2",
+    "docx": "^9.14.0",
+    "dotenv": "17.3.1",
+    "drizzle-orm": "0.45.2",
+    "mammoth": "^1.13.0",
+    "minio": "^8.0.7",
+    "mysql2": "^3.24.6",
+    "next": "16.2.6",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "sanitize-html": "^2.18.1",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.1.17",
+    "@types/node": "22.19.15",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "drizzle-kit": "0.31.10",
+    "eslint": "9.39.4",
+    "eslint-config-next": "16.2.6",
+    "postcss": "8.5.8",
+    "tailwindcss": "4.1.17",
+    "typescript": "5.9.3"
+  }
+}

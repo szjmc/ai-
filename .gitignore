@@ -1,0 +1,24 @@
+# Dependencies & virtualenvs
+node_modules/
+.venv/
+venv/
+
+# Next.js & TypeScript build outputs
+.next/
+out/
+build/
+next-env.d.ts
+*.tsbuildinfo
+
+# Python bytecode & local vector caches
+__pycache__/
+*.py[cod]
+backend/app/chromadb/
+backend/app/utils/chromadb/
+
+# Local environment secrets & test artifacts
+.env
+.env.local
+backend/.env
+artifacts/
+*.tmp
