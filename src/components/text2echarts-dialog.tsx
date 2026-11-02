@@ -35,7 +35,10 @@ export function Text2EchartsDialog({ open, onClose }: { open: boolean; onClose: 
 
   const scrollToEnd = useCallback(() => {
     const node = scrollRef.current;
-    if (node) node.scrollTo({ top: node.scrollHeight, behavior: "smooth" });
+    if (!node) return;
+    // 旧浏览器没有 Element.scrollTo，退回直接设置 scrollTop。
+    if (typeof node.scrollTo === "function") node.scrollTo({ top: node.scrollHeight, behavior: "smooth" });
+    else node.scrollTop = node.scrollHeight;
   }, []);
 
   useEffect(() => {

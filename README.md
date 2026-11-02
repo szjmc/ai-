@@ -38,6 +38,7 @@
 - `python3 -m unittest tests.test_text2echarts_insight`：图表配置解析（echarts / json 代码块、纯文本 JSON、outputs/data 包装、尾随逗号）、表格与占比、智能报告，以及 `/generate` 接口合同——包括「响应里不含 SQL / 原始行 / 工作流原文 / 密钥」的检查（装好 FastAPI 时自动启用路由级用例，否则跳过）。
 - `node tests/office-browser.mjs`、`node tests/browser-smoke.mjs`：浏览器端回归（需先启动服务，用 `TEST_BASE_URL` 指定地址）。测试自带数据并在结束时清理。
 - `npx next typegen`、`npm exec tsc -- --noEmit`、`npm run build`：类型与生产构建检查。
+- 生产预览用 `npm run build` + `npx next start`。**重新构建后必须重启 `next start`**：`.next` 被替换后旧进程仍在引用旧的 chunk 文件名，页面会出现静态资源 500、白屏打不开的情况。
 
 字体位于 `public/fonts/`，复制部署工程时需一并保留。Python 文件保留在工程中但不对外公开。旧版本曾暴露过配置下载入口，若曾公开部署，请更换相关凭据。
 

@@ -39,7 +39,7 @@ export function EChart({ option, label }: { option: EChartsOption; label: string
   return (
     <div className="ana-chart-frame">
       <div ref={node} className="ana-chart-canvas" role="img" aria-label={label} />
-      {failed && <p className="ana-chart-failed">图表配置无法渲染，可展开下方原始结果检查。</p>}
+      {failed && <p className="ana-chart-failed">图表暂时无法显示，请稍后重试或换一种问法。</p>}
     </div>
   );
 }
