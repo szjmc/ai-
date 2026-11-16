@@ -775,6 +775,7 @@ body{background:#f5f7fb}.topbar{background:#fff;color:var(--ink);border-bottom:1
 .hg-badge{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:600;line-height:1.2;white-space:nowrap}
 .hg-badge-sse{background:#4caf50;color:#fff;box-shadow:0 2px 8px rgba(76,175,80,.22)}
 .hg-badge-sse i{width:6px;height:6px;border-radius:50%;background:#d8ffdb}
+.hg-badge-supervisor{background:#eef2ff;border:1px solid #cdd8fb;color:#4155d6}
 .hg-badge-chart{background:#fff8ec;border:1px solid #f0cb8b;color:#d67f17}
 .hg-clear-btn{padding:6px 12px;font-size:12px;border-radius:8px;background:#fff;border:1px solid #dde4f2}
 .hg-grid{display:grid;grid-template-columns:minmax(310px,38%) minmax(0,1fr);gap:16px;align-items:stretch}
@@ -804,6 +805,13 @@ body{background:#f5f7fb}.topbar{background:#fff;color:var(--ink);border-bottom:1
 .hg-textarea-wrap textarea::placeholder{color:#a4b0c3}
 .hg-counter{position:absolute;right:12px;bottom:7px;font-size:11.5px;color:#8e9bb0;font-variant-numeric:tabular-nums}
 .hg-counter.is-full{color:#d14338}
+.hg-chart-picker-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.hg-picker-label{font-size:12px;font-weight:600;color:#4f5f7a;white-space:nowrap}
+.hg-type-picker{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.hg-type-pill{padding:5px 12px;border:1px solid #d8e1f2;border-radius:999px;background:#f7f9fe;color:#475875;font-size:12px;font-weight:500;cursor:pointer;transition:background .15s,border-color .15s,color .15s,box-shadow .15s}
+.hg-type-pill:hover:not(:disabled){border-color:#93a5f7;color:#3348cc;background:#f0f4ff}
+.hg-type-pill.on{background:#eef2ff;border-color:#5b6df2;color:#3f52e0;font-weight:600;box-shadow:0 1px 4px rgba(82,99,243,.16)}
+.hg-type-pill:disabled{opacity:.6;cursor:not-allowed}
 .hg-format-hint{margin:0;font-size:12px;color:#6c7b93}
 .hg-form-actions{display:flex;align-items:center;gap:10px}
 .hg-submit-btn{border:0;border-radius:9px;padding:9px 22px;background:linear-gradient(135deg,#5263f3,#6675f7);color:#fff;font-size:13.5px;font-weight:600;cursor:pointer;box-shadow:0 4px 12px rgba(82,99,243,.24);transition:opacity .15s,transform .1s}

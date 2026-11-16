@@ -137,11 +137,22 @@ try {
   await page.getByRole("button", { name: "健康数据分析智能体", exact: true }).click();
   await expect(page.locator("main .hg-shell")).toBeVisible();
   await expect(page.getByText("SSE 流式输出")).toBeVisible();
+  await expect(page.getByText("LangGraph 主管模式")).toBeVisible();
   await expect(page.getByText("图表自动渲染")).toBeVisible();
+
+  const chartGroup = page.getByRole("group", { name: "图表类型" });
+  for (const label of ["柱状图", "折线图", "饼图"]) {
+    await expect(chartGroup.getByRole("button", { name: label, exact: true })).toBeVisible();
+  }
 
   const textarea = page.locator("#hg-question-input");
   await textarea.fill("查询高风险(饼图)");
   await expect(page.getByText("9 / 300")).toBeVisible();
+  await expect(chartGroup.getByRole("button", { name: "饼图", exact: true })).toHaveAttribute("aria-pressed", "true");
+
+  await chartGroup.getByRole("button", { name: "折线图", exact: true }).click();
+  await expect(chartGroup.getByRole("button", { name: "折线图", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await chartGroup.getByRole("button", { name: "饼图", exact: true }).click();
 
   await page.getByRole("button", { name: "开始分析" }).click();
 

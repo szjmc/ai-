@@ -12,6 +12,9 @@ import {
 } from "@/lib/graph-stream";
 
 const MAX_QUESTION = 300;
+const CHART_TYPES = ["柱状图", "折线图", "饼图"] as const;
+type GraphChartType = (typeof CHART_TYPES)[number];
+
 const QUICK_EXAMPLES = [
   "查询高风险",
   "查询高风险(饼图)",
@@ -237,6 +240,7 @@ export function HealthGraphAgent({
   onClose?: () => void;
 }) {
   const [question, setQuestion] = useState("");
+  const [selectedChartType, setSelectedChartType] = useState<GraphChartType>("柱状图");
   const [streamState, setStreamState] = useState<GraphStreamState>(() => createInitialGraphState());
   const abortRef = useRef<AbortController | null>(null);
   const processBoxRef = useRef<HTMLDivElement>(null);
@@ -263,7 +267,26 @@ export function HealthGraphAgent({
     };
   }, []);
 
-  const runAnalysis = useCallback(async (rawInput: string) => {
+  const handleQuestionChange = useCallback((nextValue: string) => {
+    setQuestion(nextValue);
+    const { chartType: hinted } = parseQuestionChartHint(nextValue);
+    if (hinted && (CHART_TYPES as readonly string[]).includes(hinted)) {
+      setSelectedChartType(hinted as GraphChartType);
+    }
+  }, []);
+
+  const handleSelectChartType = useCallback((nextType: GraphChartType) => {
+    setSelectedChartType(nextType);
+    setQuestion((prev) => {
+      const { cleanQuestion, chartType: hinted } = parseQuestionChartHint(prev);
+      if (hinted && cleanQuestion) {
+        return `${cleanQuestion}(${nextType})`;
+      }
+      return prev;
+    });
+  }, []);
+
+  const runAnalysis = useCallback(async (rawInput: string, chartTypeOverride?: GraphChartType) => {
     const trimmed = rawInput.trim();
     if (!trimmed || isStreaming) return;
 
@@ -271,24 +294,26 @@ export function HealthGraphAgent({
     const controller = new AbortController();
     abortRef.current = controller;
 
-    const { chartType } = parseQuestionChartHint(trimmed);
+    const { chartType: hinted } = parseQuestionChartHint(trimmed);
+    const effectiveChartType =
+      chartTypeOverride ??
+      ((hinted && (CHART_TYPES as readonly string[]).includes(hinted) ? hinted : selectedChartType) as GraphChartType);
+
     const initial: GraphStreamState = {
       ...createInitialGraphState(trimmed),
       status: "streaming",
-      chartType: chartType || "",
+      chartType: effectiveChartType,
     };
     setStreamState(initial);
 
     try {
       const payload: Record<string, unknown> = {
         question: trimmed,
+        echarts_type: effectiveChartType,
         stream: true,
         auto_execute: true,
         limit: 20,
       };
-      if (chartType) {
-        payload.echarts_type = chartType;
-      }
 
       const response = await fetch("/api/v1/graph/graph_generate", {
         method: "POST",
@@ -324,7 +349,7 @@ export function HealthGraphAgent({
         abortRef.current = null;
       }
     }
-  }, [isStreaming]);
+  }, [isStreaming, selectedChartType]);
 
   const handleCancel = useCallback(() => {
     abortRef.current?.abort();
@@ -334,6 +359,7 @@ export function HealthGraphAgent({
     abortRef.current?.abort();
     setStreamState(createInitialGraphState());
     setQuestion("");
+    setSelectedChartType("柱状图");
     inputRef.current?.focus();
   }, []);
 
@@ -372,6 +398,7 @@ export function HealthGraphAgent({
             <i aria-hidden="true" />
             SSE 流式输出
           </span>
+          <span className="hg-badge hg-badge-supervisor">LangGraph 主管模式</span>
           <span className="hg-badge hg-badge-chart">图表自动渲染</span>
           {(hasAnyResult || streamState.steps.length > 0) && (
             <button
@@ -455,7 +482,7 @@ export function HealthGraphAgent({
                   maxLength={MAX_QUESTION}
                   value={question}
                   placeholder="请输入问题，例如：查询高风险(饼图)"
-                  onChange={(event) => setQuestion(event.target.value)}
+                  onChange={(event) => handleQuestionChange(event.target.value)}
                   onCompositionStart={() => {
                     composingRef.current = true;
                   }}
@@ -474,8 +501,26 @@ export function HealthGraphAgent({
                 </span>
               </div>
 
+              <div className="hg-chart-picker-row">
+                <span className="hg-picker-label">图表类型</span>
+                <div className="hg-type-picker" role="group" aria-label="图表类型">
+                  {CHART_TYPES.map((type) => (
+                    <button
+                      key={type}
+                      type="button"
+                      className={`hg-type-pill${selectedChartType === type ? " on" : ""}`}
+                      aria-pressed={selectedChartType === type}
+                      disabled={isStreaming}
+                      onClick={() => handleSelectChartType(type)}
+                    >
+                      {type}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <p className="hg-format-hint">
-                格式支持：问题(图表类型)，例如 查询高风险(饼图)
+                可点击上方选择图表类型，或直接输入：问题(图表类型)，例如 查询高风险(饼图)
               </p>
 
               <div className="hg-form-actions">
@@ -525,7 +570,7 @@ export function HealthGraphAgent({
                       type="button"
                       className="hg-example-chip"
                       onClick={() => {
-                        setQuestion(item);
+                        handleQuestionChange(item);
                         inputRef.current?.focus();
                       }}
                     >

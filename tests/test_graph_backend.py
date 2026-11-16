@@ -14,6 +14,7 @@ from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app.routers.graph_router import GraphRouter  # noqa: E402
+from app.utils.graph_supervisor import build_supervisor_graph  # noqa: E402
 from app.utils.graph_workflow import (  # noqa: E402
     build_analysis_and_summary,
     build_graph_echarts_option,
@@ -151,6 +152,17 @@ class GraphRouterTests(unittest.TestCase):
         self.assertEqual(len(result_payloads), 1)
         result = result_payloads[0]
         self.assertTrue(result["success"])
+        self.assertEqual(result["orchestrator"], "langgraph_supervisor")
+        self.assertEqual(
+            result["supervisor_trace"],
+            [
+                "supervisor->sql_agent",
+                "supervisor->data_agent",
+                "supervisor->insight_agent",
+                "supervisor->chart_agent",
+                "supervisor->end",
+            ],
+        )
         self.assertEqual(result["chart_type"], "饼图")
         self.assertEqual(result["table"]["columns"], ["风险等级", "人数", "占比"])
         self.assertEqual(result["echarts_option"]["series"][0]["type"], "pie")
@@ -160,6 +172,32 @@ class GraphRouterTests(unittest.TestCase):
         # 安全检查：不能向浏览器泄漏 SQL、表名或密钥
         for forbidden in ("SELECT", "user_health_risk_assessment", "DIFY_API_KEY", "test_db"):
             self.assertNotIn(forbidden, response.text)
+
+    def test_supervisor_graph_nodes_and_explicit_chart_type_selection(self):
+        compiled = build_supervisor_graph()
+        self.assertEqual(
+            set(compiled.nodes.keys()),
+            {"__start__", "supervisor", "sql_agent", "data_agent", "insight_agent", "chart_agent"},
+        )
+
+        health_res = self.client.get("/api/v1/graph/health")
+        self.assertEqual(health_res.status_code, 200)
+        health_data = health_res.json()["data"]
+        self.assertEqual(health_data["orchestrator"], "langgraph_supervisor")
+        self.assertEqual(health_data["supported_chart_types"], ["柱状图", "折线图", "饼图"])
+
+        with patch("app.routers.graph_router.vn.generate_sql", return_value="SELECT risk_level, COUNT(*) AS count FROM user_health_risk_assessment GROUP BY risk_level"), \
+             patch("app.routers.graph_router.vn.execute_sql", return_value=list(AGG_ROWS)):
+            for chosen_type, expected_series in [("柱状图", "bar"), ("折线图", "line"), ("饼图", "pie")]:
+                res = self.client.post(
+                    "/api/v1/graph/graph_generate",
+                    json={"question": "查询风险分布", "echarts_type": chosen_type, "stream": False},
+                )
+                self.assertEqual(res.status_code, 200)
+                body = res.json()
+                self.assertTrue(body["success"])
+                self.assertEqual(body["chart_type"], chosen_type)
+                self.assertEqual(body["echarts_option"]["series"][0]["type"], expected_series)
 
     def test_get_and_non_stream_modes(self):
         with patch("app.routers.graph_router.vn.generate_sql", return_value="SELECT user_name, age, total_score, risk_level FROM user_health_risk_assessment"), \
