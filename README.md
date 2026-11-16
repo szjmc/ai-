@@ -55,3 +55,16 @@
 **接口字段：**`success`、`question`、`chart_type`、`title`、`subtitle`、`echarts_option`（可直接 `setOption` 的配置）、`table`（`columns` / `rows` / `value_column` / `share_column`）、`report`（`metrics` / `summary` / `insight` / `insight_tone`）、`error`（可读提示）、`execution_time`。调试信息不进响应体。
 
 **部署注意：**`backend/main.py` 已把 `Text2EchartsRouter` 挂载到 `/api/v1/text2echarts`（独立 try 包裹，缺少可选依赖时只降级该功能）；若使用自己的 FastAPI 入口启动，需要同样挂载该路由并配置 `DIFY_API_KEY`、`DIFY_BASE_URL`（超时可用 `DIFY_TIME_OUT`，默认 600 秒）。后端 `execution_time` 统计的是生成图表前的 SQL 查询阶段，并非完整生成耗时。
+
+## 健康数据分析智能体（`/api/v1/graph/graph_generate`）
+
+工作台左侧新增「健康数据分析智能体」入口（也可直接访问 `/graph` 或 `/?view=graph`），对应参考界面的双栏流式分析布局：
+
+- **左侧「思考过程」与提问区**：通过 SSE（`text/event-stream`）实时流式展示业务执行步骤（`开始处理请求` → `1. 正在生成 SQL...` → `2. SQL 生成完成` → `3. 正在执行 SQL 查询...` → `4. SQL 执行完成，返回 N 行数据` → `5-6. 格式化数据` → `7-8. 生成分析结论` → `9-10. 生成 ECharts 配置` → `所有步骤完成`），支持 `问题(图表类型)` 写法（例如 `查询高风险(饼图)`）与 300 字计数。
+- **右侧「最终结果」与「ECharts 图表」**：在分析完成后输出结构化数据表格、核心发现与总结，并在下方渲染交互式 ECharts 图表。
+- **接口与配置**：后端由 `backend/app/routers/graph_router.py`（挂载在 `/api/v1/graph/graph_generate`）提供 SSE 与 `stream=false` 兼容能力；前端通过 Next.js 透传代理 `/api/v1/graph/graph_generate` 调用上游 `GRAPH_GENERATE_URL`（默认 `${FASTAPI_URL}/api/v1/graph/graph_generate`），不在响应中下发 SQL、数据库库表名、密钥或后端内网地址。
+- **验证命令**：
+  - Python 后端单测：`.venv/bin/python -m unittest tests/test_graph_backend.py tests/test_text2echarts_insight.py`
+  - Node 代理与流式解析测试：`node --import tsx --test tests/*.test.ts`
+  - 浏览器端 Playwright 测试：`node tests/graph-browser.mjs`、`node tests/workspace-navigation-browser.mjs`
+

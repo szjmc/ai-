@@ -15,6 +15,8 @@ export function getBackendConfig() {
   const endpoint = env("MINIO_ENDPOINT", "127.0.0.1:9100");
   const minioSecure = env("MINIO_SECURE", "False").toLowerCase() === "true";
   const url = new URL(/^https?:\/\//i.test(endpoint) ? endpoint : `${minioSecure ? "https" : "http"}://${endpoint}`);
+  const fastapiUrl = env("FASTAPI_URL", "http://127.0.0.1:8018").replace(/\/$/, "");
+  const graphGenerateUrl = env("GRAPH_GENERATE_URL").replace(/\/$/, "") || `${fastapiUrl}/api/v1/graph/graph_generate`;
   return {
     minioEndpoint: url.host,
     minioHost: url.hostname,
@@ -29,6 +31,7 @@ export function getBackendConfig() {
     mysqlUser: env("MYSQL_USER", "root"),
     mysqlPassword: env("MYSQL_PASSWORD", "123456"),
     mysqlDb: env("MYSQL_DB", "test_db"),
-    fastapiUrl: env("FASTAPI_URL", "http://127.0.0.1:8018").replace(/\/$/, ""),
+    fastapiUrl,
+    graphGenerateUrl,
   };
 }
