@@ -60,9 +60,9 @@
 
 工作台左侧新增「健康数据分析智能体」入口（也可直接访问 `/graph` 或 `/?view=graph`），对应参考界面的双栏流式分析布局：
 
-- **LangGraph 主管模式多智能体编排**：后端由 `backend/app/utils/graph_supervisor.py` 基于 `langgraph` `StateGraph` 构建主管模式（`supervisor` 节点通过 `Command(goto=...)` 调度 `sql_agent`、`data_agent`、`insight_agent`、`chart_agent` 四个专员节点），并通过 `astream(..., stream_mode=["custom", "values"])` 实时流式推送进度与结果。
+- **LangGraph 主管模式多智能体编排**：后端由 `backend/app/utils/graph_supervisor.py` 基于 `langgraph` `StateGraph` 构建主管模式（`supervisor` 节点通过 `Command(goto=...)` 调度 `sql_agent`、`data_agent`、`insight_agent`、`chart_agent` 四个专员节点），兼容 `langgraph==0.2.67`（通过节点参数 `StreamWriter` 实时流式推送进度与结果，无需 `langgraph.config`）。
 - **左侧「思考过程」与提问区**：通过 SSE（`text/event-stream`）实时流式展示主管调度与各专员执行步骤，支持点选图表类型（**柱状图 / 折线图 / 饼图**）以及 `问题(图表类型)` 写法（例如 `查询高风险(饼图)`）和 300 字计数。
-- **右侧「最终结果」与「ECharts 图表」**：在分析完成后输出结构化数据表格、核心发现与总结，并在下方渲染交互式 ECharts 图表。
+- **右侧「最终结果」与「ECharts 图表」**：在分析完成后输出结构化数据表格、核心发现与总结，并在下方渲染交互式 ECharts 图表，支持一键「导出 PDF」（将表格、分析总结与高清 ECharts 图表排版为 A4 报告并调起浏览器保存为 PDF，无额外第三方依赖）。
 - **接口与配置**：后端由 `backend/app/routers/graph_router.py`（挂载在 `/api/v1/graph/graph_generate`）提供 SSE 与 `stream=false` 兼容能力；前端通过 Next.js 透传代理 `/api/v1/graph/graph_generate` 调用上游 `GRAPH_GENERATE_URL`（默认 `${FASTAPI_URL}/api/v1/graph/graph_generate`），不在响应中下发 SQL、数据库库表名、密钥或后端内网地址。
 - **验证命令**：
   - Python 后端单测：`.venv/bin/python -m unittest tests/test_graph_backend.py tests/test_text2echarts_insight.py`

@@ -8,9 +8,22 @@ import type { EChartsOption, EChartsType } from "echarts";
  * ECharts is imported lazily so the workspace bundle stays small until a chart
  * is actually rendered.
  */
-export function EChart({ option, label }: { option: EChartsOption; label: string }) {
+export function EChart({
+  option,
+  label,
+  onChartReady,
+}: {
+  option: EChartsOption;
+  label: string;
+  onChartReady?: (instance: EChartsType | null) => void;
+}) {
   const node = useRef<HTMLDivElement>(null);
+  const readyRef = useRef(onChartReady);
   const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    readyRef.current = onChartReady;
+  }, [onChartReady]);
 
   useEffect(() => {
     let disposed = false;
@@ -21,15 +34,21 @@ export function EChart({ option, label }: { option: EChartsOption; label: string
       instance = echarts.init(node.current, undefined, { renderer: "canvas" });
       try {
         instance.setOption(option, true);
+        readyRef.current?.(instance);
       } catch {
+        readyRef.current?.(null);
         setFailed(true);
         return;
       }
       observer = new ResizeObserver(() => instance?.resize());
       observer.observe(node.current);
-    }).catch(() => setFailed(true));
+    }).catch(() => {
+      readyRef.current?.(null);
+      setFailed(true);
+    });
     return () => {
       disposed = true;
+      readyRef.current?.(null);
       observer?.disconnect();
       instance?.dispose();
       instance = null;

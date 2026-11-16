@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { EChartsOption } from "echarts";
+import type { EChartsOption, EChartsType } from "echarts";
 import { EChart } from "./echart-view";
 import {
   consumeGraphGenerateStream,
@@ -10,6 +10,7 @@ import {
   type GraphStreamState,
   type GraphTable,
 } from "@/lib/graph-stream";
+import { exportAnalysisReportPdf } from "@/lib/pdf-export";
 
 const MAX_QUESTION = 300;
 const CHART_TYPES = ["柱状图", "折线图", "饼图"] as const;
@@ -242,9 +243,13 @@ export function HealthGraphAgent({
   const [question, setQuestion] = useState("");
   const [selectedChartType, setSelectedChartType] = useState<GraphChartType>("柱状图");
   const [streamState, setStreamState] = useState<GraphStreamState>(() => createInitialGraphState());
+  const [exportingPdf, setExportingPdf] = useState(false);
+  const [exportError, setExportError] = useState("");
   const abortRef = useRef<AbortController | null>(null);
   const processBoxRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const chartInstanceRef = useRef<EChartsType | null>(null);
+  const chartWrapRef = useRef<HTMLDivElement>(null);
   const composingRef = useRef(false);
 
   const isStreaming = streamState.status === "streaming";
@@ -304,6 +309,7 @@ export function HealthGraphAgent({
       status: "streaming",
       chartType: effectiveChartType,
     };
+    setExportError("");
     setStreamState(initial);
 
     try {
@@ -360,6 +366,7 @@ export function HealthGraphAgent({
     setStreamState(createInitialGraphState());
     setQuestion("");
     setSelectedChartType("柱状图");
+    setExportError("");
     inputRef.current?.focus();
   }, []);
 
@@ -383,6 +390,66 @@ export function HealthGraphAgent({
     Boolean(streamState.summary) ||
     Boolean(streamState.report) ||
     Boolean(streamState.echartsOption);
+
+  const handleExportPdf = useCallback(async () => {
+    if (!hasAnyResult || isStreaming || exportingPdf) return;
+    setExportError("");
+    setExportingPdf(true);
+    try {
+      let chartDataUrl: string | null = null;
+      if (chartInstanceRef.current) {
+        try {
+          chartDataUrl = chartInstanceRef.current.getDataURL({
+            type: "png",
+            pixelRatio: 2,
+            backgroundColor: "#ffffff",
+          });
+        } catch {
+          chartDataUrl = null;
+        }
+      }
+      if (!chartDataUrl && chartWrapRef.current) {
+        const canvas = chartWrapRef.current.querySelector("canvas");
+        if (canvas) {
+          try {
+            chartDataUrl = canvas.toDataURL("image/png");
+          } catch {
+            chartDataUrl = null;
+          }
+        }
+      }
+
+      await exportAnalysisReportPdf({
+        title: streamState.title || streamState.question || "健康数据分析报告",
+        question: streamState.question || question,
+        chartType: streamState.chartType || selectedChartType,
+        executionTime: streamState.executionTime,
+        table: streamState.table,
+        analysisMarkdown: displayMarkdown,
+        summary: streamState.summary,
+        report: streamState.report,
+        chartDataUrl,
+      });
+    } catch (caught) {
+      setExportError(caught instanceof Error ? caught.message : "导出 PDF 失败，请稍后重试。");
+    } finally {
+      setExportingPdf(false);
+    }
+  }, [
+    displayMarkdown,
+    exportingPdf,
+    hasAnyResult,
+    isStreaming,
+    question,
+    selectedChartType,
+    streamState.chartType,
+    streamState.executionTime,
+    streamState.question,
+    streamState.report,
+    streamState.summary,
+    streamState.table,
+    streamState.title,
+  ]);
 
   if (!open) return null;
 
@@ -549,15 +616,32 @@ export function HealthGraphAgent({
         <div className="hg-card hg-right-card">
           <div className="hg-card-head hg-right-head">
             <h3>最终结果</h3>
-            {streamState.chartType && (
-              <span className="hg-result-meta">
-                {streamState.chartType}
-                {streamState.executionTime != null ? ` · ${streamState.executionTime.toFixed(2)}s` : ""}
-              </span>
-            )}
+            <div className="hg-right-actions">
+              {streamState.chartType && (
+                <span className="hg-result-meta">
+                  {streamState.chartType}
+                  {streamState.executionTime != null ? ` · ${streamState.executionTime.toFixed(2)}s` : ""}
+                </span>
+              )}
+              {hasAnyResult && (
+                <button
+                  type="button"
+                  className="hg-export-btn"
+                  onClick={() => void handleExportPdf()}
+                  disabled={isStreaming || exportingPdf}
+                >
+                  {exportingPdf ? "导出中…" : "导出 PDF"}
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="hg-right-body">
+            {exportError && (
+              <div className="hg-export-warn" role="status">
+                <span>{exportError}</span>
+              </div>
+            )}
             {streamState.status === "idle" && !hasAnyResult && !streamState.error && (
               <div className="hg-empty">
                 <div className="hg-empty-icon" aria-hidden="true">❖</div>
@@ -639,11 +723,14 @@ export function HealthGraphAgent({
                     <h3>ECharts 图表</h3>
                     {streamState.subtitle && <span>{streamState.subtitle}</span>}
                   </div>
-                  <div className="hg-chart-card">
+                  <div className="hg-chart-card" ref={chartWrapRef}>
                     {streamState.echartsOption ? (
                       <EChart
                         option={streamState.echartsOption as EChartsOption}
                         label={`健康分析图表：${streamState.title || streamState.question}`}
+                        onChartReady={(inst) => {
+                          chartInstanceRef.current = inst;
+                        }}
                       />
                     ) : isStreaming ? (
                       <div className="hg-chart-waiting" role="status">

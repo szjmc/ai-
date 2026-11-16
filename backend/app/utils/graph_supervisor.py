@@ -1,22 +1,21 @@
 """基于 LangGraph 主管模式（Supervisor Pattern）的健康数据分析多智能体编排。
 
-架构：
+兼容 langgraph 0.2.x（包括 0.2.67），通过节点参数注入 ``StreamWriter``（不依赖 ``langgraph.config``）：
 - ``supervisor``（主管节点）：读取共享状态并按业务阶段调度各个专员节点，使用 ``Command(goto=...)`` 统一编排流转与终止。
 - ``sql_agent``（SQL 专员）：负责生成并校验只读 SQL，执行数据库查询。
 - ``data_agent``（数据专员）：负责将查询结果格式化为中文友好列名与结构化表格。
 - ``insight_agent``（分析专员）：负责生成表格视图、核心发现与总结结论，并实时推送 ``analysis`` 事件。
 - ``chart_agent``（图表专员）：负责依据用户选择的图表类型（柱状图 / 折线图 / 饼图）生成 ECharts 配置并实时推送 ``chart`` 事件。
 
-各节点通过 LangGraph ``get_stream_writer()`` 实时写出进度与中间结果，经 FastAPI ``astream(..., stream_mode=["custom", "values"])`` 流式输出到前端 SSE。
+各节点通过 LangGraph ``StreamWriter`` 实时写出进度与中间结果，经 FastAPI ``astream(..., stream_mode=["custom", "values"])`` 流式输出到前端 SSE。
 """
 
 import asyncio
 import logging
 from typing import Any, Dict, List, Literal, Optional, TypedDict
 
-from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
-from langgraph.types import Command
+from langgraph.types import Command, StreamWriter
 
 from app.utils.echarts_insight import build_table, chart_title
 from app.utils.graph_workflow import (
@@ -60,23 +59,30 @@ class HealthGraphState(TypedDict, total=False):
     error: Optional[str]
 
 
-def _emit_step(steps: List[str], step_num: int, message: str, agent: str) -> List[str]:
-    writer = get_stream_writer()
-    writer({
-        "type": "step",
-        "step": step_num,
-        "agent": agent,
-        "message": message,
-    })
+def _emit_step(
+    writer: Optional[StreamWriter],
+    steps: List[str],
+    step_num: int,
+    message: str,
+    agent: str,
+) -> List[str]:
+    if callable(writer):
+        writer({
+            "type": "step",
+            "step": step_num,
+            "agent": agent,
+            "message": message,
+        })
     return [*steps, message]
 
 
 def build_supervisor_graph(vanna_client: Any = None):
-    """构建并编译 LangGraph 主管模式状态图。"""
+    """构建并编译 LangGraph 主管模式状态图（兼容 langgraph 0.2.67）。"""
     client = vanna_client if vanna_client is not None else vn
 
     async def supervisor_node(
         state: HealthGraphState,
+        writer: StreamWriter,
     ) -> Command[Literal["sql_agent", "data_agent", "insight_agent", "chart_agent", "__end__"]]:
         completed = list(state.get("completed_agents") or [])
         trace = list(state.get("supervisor_trace") or [])
@@ -90,8 +96,9 @@ def build_supervisor_graph(vanna_client: Any = None):
             )
 
         if "sql_agent" not in completed:
-            steps = _emit_step(steps, 0, "开始处理请求", "supervisor")
+            steps = _emit_step(writer, steps, 0, "开始处理请求", "supervisor")
             steps = _emit_step(
+                writer,
                 steps,
                 0,
                 f"主管节点：识别目标图表类型为「{chart_type}」，调度 SQL 查询专员",
@@ -108,6 +115,7 @@ def build_supervisor_graph(vanna_client: Any = None):
         if "data_agent" not in completed:
             row_count = int(state.get("row_count") or 0)
             steps = _emit_step(
+                writer,
                 steps,
                 4,
                 f"主管节点：已获取 {row_count} 行数据，调度数据格式化专员",
@@ -123,6 +131,7 @@ def build_supervisor_graph(vanna_client: Any = None):
 
         if "insight_agent" not in completed:
             steps = _emit_step(
+                writer,
                 steps,
                 6,
                 "主管节点：数据格式化就绪，调度分析结论专员",
@@ -138,6 +147,7 @@ def build_supervisor_graph(vanna_client: Any = None):
 
         if "chart_agent" not in completed:
             steps = _emit_step(
+                writer,
                 steps,
                 8,
                 f"主管节点：结论生成完成，调度图表专员生成「{chart_type}」",
@@ -151,7 +161,7 @@ def build_supervisor_graph(vanna_client: Any = None):
                 },
             )
 
-        steps = _emit_step(steps, 11, "所有步骤完成", "supervisor")
+        steps = _emit_step(writer, steps, 11, "所有步骤完成", "supervisor")
         return Command(
             goto=END,
             update={
@@ -160,13 +170,16 @@ def build_supervisor_graph(vanna_client: Any = None):
             },
         )
 
-    async def sql_agent_node(state: HealthGraphState) -> Command[Literal["supervisor"]]:
+    async def sql_agent_node(
+        state: HealthGraphState,
+        writer: StreamWriter,
+    ) -> Command[Literal["supervisor"]]:
         steps = list(state.get("steps") or [])
         completed = list(state.get("completed_agents") or [])
         clean_question = state.get("clean_question") or ""
         auto_execute = state.get("auto_execute", True)
 
-        steps = _emit_step(steps, 1, "1. 正在生成 SQL...", "sql_agent")
+        steps = _emit_step(writer, steps, 1, "1. 正在生成 SQL...", "sql_agent")
         await asyncio.sleep(0)
 
         generated_sql = await asyncio.to_thread(client.generate_sql, clean_question)
@@ -185,10 +198,10 @@ def build_supervisor_graph(vanna_client: Any = None):
                 },
             )
 
-        steps = _emit_step(steps, 2, "2. SQL 生成完成", "sql_agent")
+        steps = _emit_step(writer, steps, 2, "2. SQL 生成完成", "sql_agent")
         await asyncio.sleep(0)
 
-        steps = _emit_step(steps, 3, "3. 正在执行 SQL 查询...", "sql_agent")
+        steps = _emit_step(writer, steps, 3, "3. 正在执行 SQL 查询...", "sql_agent")
         await asyncio.sleep(0)
 
         raw_rows: List[Dict[str, Any]] = []
@@ -197,7 +210,7 @@ def build_supervisor_graph(vanna_client: Any = None):
 
         row_count = len(raw_rows)
         logger.info("Graph(Supervisor) SQL 查询返回 %d 行", row_count)
-        steps = _emit_step(steps, 4, f"4. SQL 执行完成，返回 {row_count} 行数据", "sql_agent")
+        steps = _emit_step(writer, steps, 4, f"4. SQL 执行完成，返回 {row_count} 行数据", "sql_agent")
         await asyncio.sleep(0)
 
         if row_count == 0:
@@ -224,18 +237,21 @@ def build_supervisor_graph(vanna_client: Any = None):
             },
         )
 
-    async def data_agent_node(state: HealthGraphState) -> Command[Literal["supervisor"]]:
+    async def data_agent_node(
+        state: HealthGraphState,
+        writer: StreamWriter,
+    ) -> Command[Literal["supervisor"]]:
         steps = list(state.get("steps") or [])
         completed = list(state.get("completed_agents") or [])
         raw_rows = state.get("raw_rows") or []
 
-        steps = _emit_step(steps, 5, "5. 正在格式化数据...", "data_agent")
+        steps = _emit_step(writer, steps, 5, "5. 正在格式化数据...", "data_agent")
         await asyncio.sleep(0)
 
         display_rows = format_rows_for_display(raw_rows)
         table = build_table(display_rows, None)
 
-        steps = _emit_step(steps, 6, "6. 数据格式化完成", "data_agent")
+        steps = _emit_step(writer, steps, 6, "6. 数据格式化完成", "data_agent")
         await asyncio.sleep(0)
 
         return Command(
@@ -248,8 +264,10 @@ def build_supervisor_graph(vanna_client: Any = None):
             },
         )
 
-    async def insight_agent_node(state: HealthGraphState) -> Command[Literal["supervisor"]]:
-        writer = get_stream_writer()
+    async def insight_agent_node(
+        state: HealthGraphState,
+        writer: StreamWriter,
+    ) -> Command[Literal["supervisor"]]:
         steps = list(state.get("steps") or [])
         completed = list(state.get("completed_agents") or [])
         display_rows = state.get("display_rows") or []
@@ -258,7 +276,7 @@ def build_supervisor_graph(vanna_client: Any = None):
         raw_question = state.get("raw_question") or clean_question
         chart_type = state.get("chart_type") or "柱状图"
 
-        steps = _emit_step(steps, 7, "7. 正在生成分析结论...", "insight_agent")
+        steps = _emit_step(writer, steps, 7, "7. 正在生成分析结论...", "insight_agent")
         await asyncio.sleep(0)
 
         analysis_markdown, summary_text, report = build_analysis_and_summary(
@@ -268,17 +286,18 @@ def build_supervisor_graph(vanna_client: Any = None):
             chart_type=chart_type,
         )
 
-        steps = _emit_step(steps, 8, "8. 分析结论生成完成", "insight_agent")
-        writer({
-            "type": "analysis",
-            "agent": "insight_agent",
-            "question": raw_question,
-            "chart_type": chart_type,
-            "table": table,
-            "analysis": analysis_markdown,
-            "summary": summary_text,
-            "report": report,
-        })
+        steps = _emit_step(writer, steps, 8, "8. 分析结论生成完成", "insight_agent")
+        if callable(writer):
+            writer({
+                "type": "analysis",
+                "agent": "insight_agent",
+                "question": raw_question,
+                "chart_type": chart_type,
+                "table": table,
+                "analysis": analysis_markdown,
+                "summary": summary_text,
+                "report": report,
+            })
         await asyncio.sleep(0)
 
         return Command(
@@ -292,8 +311,10 @@ def build_supervisor_graph(vanna_client: Any = None):
             },
         )
 
-    async def chart_agent_node(state: HealthGraphState) -> Command[Literal["supervisor"]]:
-        writer = get_stream_writer()
+    async def chart_agent_node(
+        state: HealthGraphState,
+        writer: StreamWriter,
+    ) -> Command[Literal["supervisor"]]:
         steps = list(state.get("steps") or [])
         completed = list(state.get("completed_agents") or [])
         display_rows = state.get("display_rows") or []
@@ -302,7 +323,7 @@ def build_supervisor_graph(vanna_client: Any = None):
         chart_type = state.get("chart_type") or "柱状图"
         row_count = int(state.get("row_count") or len(display_rows))
 
-        steps = _emit_step(steps, 9, "9. 正在生成 ECharts 配置...", "chart_agent")
+        steps = _emit_step(writer, steps, 9, "9. 正在生成 ECharts 配置...", "chart_agent")
         await asyncio.sleep(0)
 
         workflow_result = await asyncio.to_thread(try_workflow_chart, display_rows, chart_type)
@@ -316,15 +337,16 @@ def build_supervisor_graph(vanna_client: Any = None):
         title = chart_title(echarts_option) or clean_question
         subtitle = f"{chart_type} · 共 {row_count} 条记录"
 
-        steps = _emit_step(steps, 10, "10. 图表配置生成完成", "chart_agent")
-        writer({
-            "type": "chart",
-            "agent": "chart_agent",
-            "chart_type": chart_type,
-            "title": title,
-            "subtitle": subtitle,
-            "echarts_option": echarts_option,
-        })
+        steps = _emit_step(writer, steps, 10, "10. 图表配置生成完成", "chart_agent")
+        if callable(writer):
+            writer({
+                "type": "chart",
+                "agent": "chart_agent",
+                "chart_type": chart_type,
+                "title": title,
+                "subtitle": subtitle,
+                "echarts_option": echarts_option,
+            })
         await asyncio.sleep(0)
 
         return Command(

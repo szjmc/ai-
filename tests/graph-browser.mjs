@@ -161,9 +161,10 @@ try {
   await expect(page.locator(".hg-step-list")).toContainText("1. 正在生成 SQL...");
   await expect(page.locator(".hg-step-list")).toContainText("所有步骤完成");
 
-  // Right panel displays table, analysis/summary, and rendered ECharts canvas
+  // Right panel displays table, analysis/summary, export PDF button, and rendered ECharts canvas
   await expect(page.locator(".hg-table")).toContainText("高风险");
   await expect(page.locator(".hg-answer-panel")).toContainText("建议优先安排营养干预");
+  await expect(page.getByRole("button", { name: "导出 PDF" })).toBeEnabled();
   const canvasBox = await page.locator(".hg-chart-card canvas").first().boundingBox();
   assert.ok(canvasBox && canvasBox.width > 200 && canvasBox.height > 200, "ECharts canvas should render");
   assert.equal(lastRequestPayload?.question, "查询高风险(饼图)");
