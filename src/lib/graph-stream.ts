@@ -23,14 +23,39 @@ export type GraphReport = {
 export type GraphStep = {
   id: string;
   text: string;
+  agent?: string;
+};
+
+export type GraphInterruptInfo = {
+  reason: string;
+  prompt: string;
+  chartType: string;
+  rowCount: number;
+  humanNote: string;
+  checkpointId?: string;
+};
+
+export type GraphCheckpointItem = {
+  checkpoint_id: string;
+  step: number | null;
+  next_nodes: string[];
+  completed_agents: string[];
+  chart_type?: string;
 };
 
 export type GraphStreamState = {
-  status: "idle" | "streaming" | "done" | "error";
+  status: "idle" | "streaming" | "interrupted" | "cancelled" | "done" | "error";
   question: string;
   chartType: string;
   title: string;
   subtitle: string;
+  threadId: string;
+  checkpointId: string;
+  completedAgents: string[];
+  supervisorTrace: string[];
+  checkpoints: GraphCheckpointItem[];
+  humanNote: string;
+  interruptInfo: GraphInterruptInfo | null;
   steps: GraphStep[];
   analysisMarkdown: string;
   summary: string;
@@ -63,6 +88,13 @@ export function createInitialGraphState(question = ""): GraphStreamState {
     chartType: "",
     title: "",
     subtitle: "",
+    threadId: "",
+    checkpointId: "",
+    completedAgents: [],
+    supervisorTrace: [],
+    checkpoints: [],
+    humanNote: "",
+    interruptInfo: null,
     steps: [],
     analysisMarkdown: "",
     summary: "",
@@ -181,13 +213,13 @@ export function tableFromObjects(items: Record<string, unknown>[]): GraphTable |
   };
 }
 
-function appendStep(steps: GraphStep[], rawText: string): GraphStep[] {
+function appendStep(steps: GraphStep[], rawText: string, agent?: string): GraphStep[] {
   const text = rawText.trim();
   if (!text) return steps;
   if (steps.length > 0 && steps[steps.length - 1].text === text) {
     return steps;
   }
-  return [...steps, { id: nextStepId(), text }];
+  return [...steps, { id: nextStepId(), text, agent }];
 }
 
 function resolveOptionCandidate(obj: Record<string, unknown>): Record<string, unknown> | null {
@@ -254,9 +286,12 @@ export function applyGraphPayload(
   const trimmed = rawData.trim();
   if (!trimmed) return prev;
   if (trimmed === "[DONE]") {
+    if (prev.status === "error" || prev.status === "interrupted" || prev.status === "cancelled") {
+      return prev;
+    }
     return {
       ...prev,
-      status: prev.status === "error" ? "error" : "done",
+      status: "done",
     };
   }
 
@@ -287,9 +322,69 @@ export function applyGraphPayload(
 
   const eventType = String(obj.type || obj.event || eventName || "").toLowerCase();
 
+  if (typeof obj.thread_id === "string" && obj.thread_id.trim()) {
+    next.threadId = obj.thread_id.trim();
+  }
+  if (typeof obj.checkpoint_id === "string" && obj.checkpoint_id.trim()) {
+    next.checkpointId = obj.checkpoint_id.trim();
+  }
+  if (Array.isArray(obj.completed_agents)) {
+    next.completedAgents = obj.completed_agents.map((a) => String(a));
+  }
+  if (Array.isArray(obj.supervisor_trace)) {
+    next.supervisorTrace = obj.supervisor_trace.map((t) => String(t));
+  }
+  if (Array.isArray(obj.checkpoints)) {
+    next.checkpoints = obj.checkpoints
+      .filter((c): c is Record<string, unknown> => Boolean(c) && typeof c === "object")
+      .map((c) => ({
+        checkpoint_id: String(c.checkpoint_id || ""),
+        step: typeof c.step === "number" ? c.step : null,
+        next_nodes: Array.isArray(c.next_nodes) ? c.next_nodes.map((n) => String(n)) : [],
+        completed_agents: Array.isArray(c.completed_agents)
+          ? c.completed_agents.map((a) => String(a))
+          : [],
+        chart_type: typeof c.chart_type === "string" ? c.chart_type : undefined,
+      }));
+  }
+  if (typeof obj.human_note === "string") {
+    next.humanNote = obj.human_note.trim();
+  }
+
+  // 人工干预 / 暂停中断事件
+  if (eventType === "interrupt" || obj.interrupted === true) {
+    next.status = "interrupted";
+    next.interruptInfo = {
+      reason: typeof obj.reason === "string" ? obj.reason : "human_review",
+      prompt: typeof obj.prompt === "string" ? obj.prompt : "请在检查点确认参数后恢复继续",
+      chartType: typeof obj.chart_type === "string" && obj.chart_type.trim() ? obj.chart_type.trim() : next.chartType || "柱状图",
+      rowCount: typeof obj.row_count === "number" ? obj.row_count : next.table?.row_count || 0,
+      humanNote: typeof obj.human_note === "string" ? obj.human_note : next.humanNote,
+      checkpointId: typeof obj.checkpoint_id === "string" ? obj.checkpoint_id : next.checkpointId,
+    };
+    if (typeof obj.execution_time === "number") {
+      next.executionTime = obj.execution_time;
+    }
+    return next;
+  }
+
+  // 人工终止事件
+  if (eventType === "cancelled" || obj.cancelled === true) {
+    next.status = "cancelled";
+    next.interruptInfo = null;
+    if (typeof obj.message === "string" && obj.message.trim()) {
+      next.steps = appendStep(next.steps, obj.message, "supervisor");
+    }
+    if (typeof obj.execution_time === "number") {
+      next.executionTime = obj.execution_time;
+    }
+    return next;
+  }
+
   // 错误事件
   if (eventType === "error" || (obj.success === false && typeof obj.error === "string")) {
     next.status = "error";
+    next.interruptInfo = null;
     next.error =
       (typeof obj.error === "string" && obj.error) ||
       (typeof obj.message === "string" && obj.message) ||
@@ -315,8 +410,12 @@ export function applyGraphPayload(
       (typeof obj.content === "string" && obj.content) ||
       (typeof obj.text === "string" && obj.text) ||
       "";
+    const agent = typeof obj.agent === "string" ? obj.agent : undefined;
     if (stepMsg) {
-      next.steps = appendStep(next.steps, stepMsg);
+      next.steps = appendStep(next.steps, stepMsg, agent);
+      if (agent && !next.completedAgents.includes(agent) && /完成/.test(stepMsg)) {
+        next.completedAgents = [...next.completedAgents, agent];
+      }
     }
   }
 
@@ -411,6 +510,7 @@ export function applyGraphPayload(
 
   if (eventType === "result" || eventType === "done" || eventType === "final") {
     next.status = next.error ? "error" : "done";
+    next.interruptInfo = null;
   }
 
   return next;

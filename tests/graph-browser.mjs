@@ -10,6 +10,7 @@ const expect = baseExpect.configure({ timeout: 20000 });
 const baseURL = process.env.TEST_BASE_URL || "http://127.0.0.1:3000";
 
 let lastRequestPayload = null;
+let lastResumePayload = null;
 
 function writeSse(res, event, data) {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
@@ -21,6 +22,59 @@ const stub = createServer((req, res) => {
   if (urlObj.pathname === "/api/v1/graph/health") {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ status: 200, message: "ok", data: { service: "graph_generate" } }));
+    return;
+  }
+
+  if (urlObj.pathname.startsWith("/api/v1/graph/state/") && req.method === "GET") {
+    const threadId = decodeURIComponent(urlObj.pathname.split("/").pop() || "t-demo");
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(
+      JSON.stringify({
+        status: 200,
+        message: "ok",
+        data: {
+          thread_id: threadId,
+          checkpoint_id: "cp-demo-1",
+          interrupted: false,
+          completed_agents: ["sql_agent", "data_agent", "insight_agent", "chart_agent"],
+          history: [{ checkpoint_id: "cp-demo-1", step: 5, next_nodes: [], completed_agents: ["sql_agent", "data_agent", "insight_agent", "chart_agent"], chart_type: "饼图" }],
+        },
+      }),
+    );
+    return;
+  }
+
+  if (urlObj.pathname === "/api/v1/graph/resume" && req.method === "POST") {
+    let raw = "";
+    req.on("data", (chunk) => {
+      raw += chunk.toString();
+    });
+    req.on("end", () => {
+      lastResumePayload = JSON.parse(raw || "{}");
+      const ct = lastResumePayload.chart_type || "柱状图";
+      const seriesType = ct === "饼图" ? "pie" : ct === "折线图" ? "line" : "bar";
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+      });
+      writeSse(res, "step", { type: "step", agent: "supervisor", message: `时间旅行恢复：基于检查点重绘「${ct}」` });
+      writeSse(res, "result", {
+        type: "result",
+        success: true,
+        thread_id: lastResumePayload.thread_id || "t-demo",
+        checkpoint_id: "cp-replay-2",
+        chart_type: ct,
+        echarts_option: {
+          title: { text: `营养风险分布（${ct}）` },
+          series: [{ type: seriesType, data: ct === "饼图" ? [{ name: "高风险", value: 14 }] : [14, 11, 25] }],
+          ...(seriesType !== "pie" ? { xAxis: { type: "category", data: ["高风险", "中风险", "低风险"] }, yAxis: { type: "value" } } : {}),
+        },
+        execution_time: 0.08,
+      });
+      res.write("data: [DONE]\n\n");
+      res.end();
+    });
     return;
   }
 
@@ -138,7 +192,9 @@ try {
   await expect(page.locator("main .hg-shell")).toBeVisible();
   await expect(page.getByText("SSE 流式输出")).toBeVisible();
   await expect(page.getByText("LangGraph 主管模式")).toBeVisible();
+  await expect(page.getByText("检查点与人工干预")).toBeVisible();
   await expect(page.getByText("图表自动渲染")).toBeVisible();
+  await expect(page.getByLabel("人工干预确认")).toBeVisible();
 
   const chartGroup = page.getByRole("group", { name: "图表类型" });
   for (const label of ["柱状图", "折线图", "饼图"]) {
@@ -168,6 +224,14 @@ try {
   const canvasBox = await page.locator(".hg-chart-card canvas").first().boundingBox();
   assert.ok(canvasBox && canvasBox.width > 200 && canvasBox.height > 200, "ECharts canvas should render");
   assert.equal(lastRequestPayload?.question, "查询高风险(饼图)");
+
+  // Time-travel checkpoint replay button
+  const replayGroup = page.getByRole("group", { name: "基于检查点重绘图表" });
+  await expect(replayGroup).toBeVisible();
+  await replayGroup.getByRole("button", { name: "折线图", exact: true }).click();
+  await expect(page.locator(".hg-result-meta")).toContainText("折线图");
+  assert.equal(lastResumePayload?.action, "replay");
+  assert.equal(lastResumePayload?.chart_type, "折线图");
 
   // Standalone /graph route & mobile responsiveness
   await page.goto(`${baseURL}/graph`);

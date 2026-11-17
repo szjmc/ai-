@@ -142,11 +142,15 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const question = searchParams.get("question") || "";
   const echartsType = searchParams.get("echarts_type") || searchParams.get("chart_type") || undefined;
+  const threadId = searchParams.get("thread_id") || undefined;
+  const hilParam = searchParams.get("human_in_the_loop");
   const streamParam = searchParams.get("stream");
   const payload: Record<string, unknown> = {
     question,
     stream: streamParam !== "false",
   };
   if (echartsType) payload.echarts_type = echartsType;
+  if (threadId) payload.thread_id = threadId;
+  if (hilParam === "true" || hilParam === "1") payload.human_in_the_loop = true;
   return forwardGraphRequest(payload, request.signal);
 }

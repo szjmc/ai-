@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test, { afterEach } from "node:test";
 import { GET, POST } from "../src/app/api/v1/graph/graph_generate/route";
+import { POST as INTERRUPT_POST } from "../src/app/api/v1/graph/interrupt/route";
+import { POST as RESUME_POST } from "../src/app/api/v1/graph/resume/route";
+import { GET as STATE_GET } from "../src/app/api/v1/graph/state/[threadId]/route";
 import {
   consumeGraphGenerateStream,
   createInitialGraphState,
@@ -181,4 +184,111 @@ test("graph-stream parses question hints, split SSE chunks, and embedded echarts
   assert.equal(finalState.summary, "共 14 人");
   assert.ok(finalState.echartsOption);
   assert.ok(snapshots.length >= 4);
+});
+
+test("interrupt, resume, and state proxy routes forward cleanly and validate payloads", async () => {
+  process.env.GRAPH_GENERATE_URL = "http://custom-agent:8888/api/v1/graph/graph_generate";
+  const calls: Array<{ url: string; method?: string; body?: string }> = [];
+
+  globalThis.fetch = (async (input, init) => {
+    calls.push({ url: String(input), method: init?.method, body: init?.body ? String(init.body) : undefined });
+    const url = String(input);
+    if (url.endsWith("/interrupt")) {
+      return Response.json({ status: 200, data: { thread_id: "t-123", pause_requested: true } });
+    }
+    if (url.endsWith("/state/t-123")) {
+      return Response.json({
+        status: 200,
+        data: { thread_id: "t-123", checkpoint_id: "cp-9", interrupted: true, history: [] },
+      });
+    }
+    if (url.endsWith("/resume")) {
+      return new Response(
+        makeSseStream([
+          'event: chart\ndata: {"type":"chart","chart_type":"饼图","echarts_option":{"series":[{"type":"pie","data":[{"name":"高风险","value":14}]}]}}\n\n',
+          'event: result\ndata: {"type":"result","success":true,"thread_id":"t-123","checkpoint_id":"cp-10","chart_type":"饼图","echarts_option":{"series":[{"type":"pie","data":[{"name":"高风险","value":14}]}]}}\n\n',
+          "data: [DONE]\n\n",
+        ]),
+        { status: 200, headers: { "Content-Type": "text/event-stream; charset=utf-8" } },
+      );
+    }
+    return new Response("not found", { status: 404 });
+  }) as typeof fetch;
+
+  const badInt = await INTERRUPT_POST(
+    new Request("http://localhost/api/v1/graph/interrupt", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ thread_id: "" }),
+    }),
+  );
+  assert.equal(badInt.status, 400);
+
+  const okInt = await INTERRUPT_POST(
+    new Request("http://localhost/api/v1/graph/interrupt", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ thread_id: "t-123" }),
+    }),
+  );
+  assert.equal(okInt.status, 200);
+  assert.equal(calls[0].url, "http://custom-agent:8888/api/v1/graph/interrupt");
+
+  const stateRes = await STATE_GET(new Request("http://localhost/api/v1/graph/state/t-123"), {
+    params: Promise.resolve({ threadId: "t-123" }),
+  });
+  assert.equal(stateRes.status, 200);
+  assert.equal(calls[1].url, "http://custom-agent:8888/api/v1/graph/state/t-123");
+
+  const badAction = await RESUME_POST(
+    new Request("http://localhost/api/v1/graph/resume", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ thread_id: "t-123", action: "drop_db" }),
+    }),
+  );
+  assert.equal(badAction.status, 400);
+
+  const resumeRes = await RESUME_POST(
+    new Request("http://localhost/api/v1/graph/resume", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ thread_id: "t-123", action: "approve", chart_type: "饼图", human_note: "复核完成" }),
+    }),
+  );
+  assert.equal(resumeRes.status, 200);
+  assert.equal(calls[2].url, "http://custom-agent:8888/api/v1/graph/resume");
+  assert.match(await resumeRes.text(), /"checkpoint_id":"cp-10"/);
+});
+
+test("graph-stream preserves interrupted and cancelled states across [DONE]", async () => {
+  const intrStream = new Response(
+    makeSseStream([
+      'event: meta\ndata: {"type":"meta","thread_id":"t-hil-1"}\n\n',
+      'event: step\ndata: {"type":"step","agent":"insight_agent","message":"8. 分析结论生成完成"}\n\n',
+      'event: analysis\ndata: {"type":"analysis","table":{"columns":["风险等级","人数"],"rows":[["高风险",14]]},"analysis":"高风险 14 人","summary":"高风险 14 人"}\n\n',
+      'event: interrupt\ndata: {"type":"interrupt","interrupted":true,"thread_id":"t-hil-1","checkpoint_id":"cp-5","reason":"human_review","prompt":"请确认图表类型","chart_type":"柱状图","row_count":1,"completed_agents":["sql_agent","data_agent","insight_agent"]}\n\n',
+      "data: [DONE]\n\n",
+    ]),
+    { status: 200, headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  const intrState = await consumeGraphGenerateStream(intrStream, createInitialGraphState("查询高风险"), () => {});
+  assert.equal(intrState.status, "interrupted");
+  assert.equal(intrState.threadId, "t-hil-1");
+  assert.equal(intrState.checkpointId, "cp-5");
+  assert.equal(intrState.interruptInfo?.reason, "human_review");
+  assert.deepEqual(intrState.completedAgents, ["sql_agent", "data_agent", "insight_agent"]);
+  assert.equal(intrState.table?.rows[0][0], "高风险");
+
+  const cancelStream = new Response(
+    makeSseStream([
+      'event: cancelled\ndata: {"type":"cancelled","cancelled":true,"thread_id":"t-hil-1","message":"流程已按人工指令终止"}\n\n',
+      "data: [DONE]\n\n",
+    ]),
+    { status: 200, headers: { "Content-Type": "text/event-stream" } },
+  );
+  const cancelState = await consumeGraphGenerateStream(cancelStream, intrState, () => {});
+  assert.equal(cancelState.status, "cancelled");
+  assert.equal(cancelState.interruptInfo, null);
 });

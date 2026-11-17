@@ -14,7 +14,7 @@ from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app.routers.graph_router import GraphRouter  # noqa: E402
-from app.utils.graph_supervisor import build_supervisor_graph  # noqa: E402
+from app.utils.graph_supervisor import build_supervisor_graph, request_pause  # noqa: E402
 from app.utils.graph_workflow import (  # noqa: E402
     build_analysis_and_summary,
     build_graph_echarts_option,
@@ -175,15 +175,18 @@ class GraphRouterTests(unittest.TestCase):
 
     def test_supervisor_graph_nodes_and_explicit_chart_type_selection(self):
         compiled = build_supervisor_graph()
+        self.assertIsNotNone(compiled.checkpointer)
         self.assertEqual(
             set(compiled.nodes.keys()),
-            {"__start__", "supervisor", "sql_agent", "data_agent", "insight_agent", "chart_agent"},
+            {"__start__", "supervisor", "sql_agent", "data_agent", "insight_agent", "human_review", "chart_agent"},
         )
 
         health_res = self.client.get("/api/v1/graph/health")
         self.assertEqual(health_res.status_code, 200)
         health_data = health_res.json()["data"]
         self.assertEqual(health_data["orchestrator"], "langgraph_supervisor")
+        self.assertIn("human_in_the_loop", health_data["features"])
+        self.assertIn("time_travel_replay", health_data["features"])
         self.assertEqual(health_data["supported_chart_types"], ["柱状图", "折线图", "饼图"])
 
         with patch("app.routers.graph_router.vn.generate_sql", return_value="SELECT risk_level, COUNT(*) AS count FROM user_health_risk_assessment GROUP BY risk_level"), \
@@ -198,6 +201,119 @@ class GraphRouterTests(unittest.TestCase):
                 self.assertTrue(body["success"])
                 self.assertEqual(body["chart_type"], chosen_type)
                 self.assertEqual(body["echarts_option"]["series"][0]["type"], expected_series)
+
+    def test_human_in_the_loop_interrupt_resume_and_time_travel_replay(self):
+        thread_id = "test-hil-thread-001"
+        with patch("app.routers.graph_router.vn.generate_sql", return_value="SELECT risk_level, COUNT(*) AS count FROM user_health_risk_assessment GROUP BY risk_level") as mock_gen, \
+             patch("app.routers.graph_router.vn.execute_sql", return_value=list(AGG_ROWS)) as mock_exec:
+            start_res = self.client.post(
+                "/api/v1/graph/graph_generate",
+                json={
+                    "question": "查询风险分布",
+                    "echarts_type": "柱状图",
+                    "thread_id": thread_id,
+                    "human_in_the_loop": True,
+                },
+            )
+            self.assertEqual(start_res.status_code, 200)
+            events = parse_sse_events(start_res.text)
+            analysis_events = [json.loads(d) for e, d in events if e == "analysis"]
+            interrupt_events = [json.loads(d) for e, d in events if e == "interrupt"]
+            self.assertEqual(len(analysis_events), 1)
+            self.assertEqual(len(interrupt_events), 1)
+            self.assertTrue(interrupt_events[0]["interrupted"])
+            self.assertEqual(interrupt_events[0]["reason"], "human_review")
+            self.assertEqual(mock_exec.call_count, 1)
+
+            state_res = self.client.get(f"/api/v1/graph/state/{thread_id}")
+            self.assertEqual(state_res.status_code, 200)
+            snap = state_res.json()["data"]
+            self.assertTrue(snap["interrupted"])
+            self.assertGreaterEqual(len(snap["history"]), 3)
+            for forbidden in ("SELECT", "user_health_risk_assessment"):
+                self.assertNotIn(forbidden, state_res.text)
+
+            # 人工干预批准并修改图表类型为饼图、追加人工批注（不重查 SQL）
+            resume_res = self.client.post(
+                "/api/v1/graph/resume",
+                json={
+                    "thread_id": thread_id,
+                    "action": "approve",
+                    "chart_type": "饼图",
+                    "human_note": "重点随访高风险人群",
+                    "stream": False,
+                },
+            )
+            self.assertEqual(resume_res.status_code, 200)
+            resumed = resume_res.json()
+            self.assertTrue(resumed["success"])
+            self.assertEqual(resumed["chart_type"], "饼图")
+            self.assertEqual(resumed["echarts_option"]["series"][0]["type"], "pie")
+            self.assertIn("重点随访高风险人群", resumed["analysis"])
+            self.assertIn("重点随访高风险人群", resumed["summary"])
+            self.assertEqual(mock_gen.call_count, 1)
+            self.assertEqual(mock_exec.call_count, 1)
+
+            # Time-Travel：基于检查点切换为折线图重绘，同样跳过 SQL 查询
+            replay_res = self.client.post(
+                "/api/v1/graph/resume",
+                json={
+                    "thread_id": thread_id,
+                    "action": "replay",
+                    "chart_type": "折线图",
+                    "stream": False,
+                },
+            )
+            self.assertEqual(replay_res.status_code, 200)
+            replayed = replay_res.json()
+            self.assertTrue(replayed["success"])
+            self.assertEqual(replayed["chart_type"], "折线图")
+            self.assertEqual(replayed["echarts_option"]["series"][0]["type"], "line")
+            self.assertEqual(mock_exec.call_count, 1)
+
+    def test_anytime_pause_interrupt_cancel_and_rerun_sql(self):
+        thread_id = "test-pause-thread-002"
+
+        def execute_and_pause(_sql):
+            request_pause(thread_id)
+            return list(AGG_ROWS)
+
+        with patch("app.routers.graph_router.vn.generate_sql", return_value="SELECT risk_level, COUNT(*) AS count FROM user_health_risk_assessment GROUP BY risk_level"), \
+             patch("app.routers.graph_router.vn.execute_sql", side_effect=execute_and_pause) as mock_exec:
+            pause_res = self.client.post(
+                "/api/v1/graph/graph_generate",
+                json={"question": "查询风险分布(柱状图)", "thread_id": thread_id},
+            )
+            self.assertEqual(pause_res.status_code, 200)
+            events = parse_sse_events(pause_res.text)
+            interrupts = [json.loads(d) for e, d in events if e == "interrupt"]
+            self.assertEqual(len(interrupts), 1)
+            self.assertEqual(interrupts[0]["reason"], "user_pause")
+
+            # 测试人工终止
+            cancel_res = self.client.post(
+                "/api/v1/graph/resume",
+                json={"thread_id": thread_id, "action": "cancel", "stream": False},
+            )
+            self.assertEqual(cancel_res.status_code, 200)
+            self.assertTrue(cancel_res.json()["cancelled"])
+
+        # 测试从终止/中断检查点重查 SQL 并恢复完成
+        with patch("app.routers.graph_router.vn.generate_sql", return_value="SELECT risk_level, COUNT(*) AS count FROM user_health_risk_assessment GROUP BY risk_level"), \
+             patch("app.routers.graph_router.vn.execute_sql", return_value=list(AGG_ROWS)) as mock_exec2:
+            rerun_res = self.client.post(
+                "/api/v1/graph/resume",
+                json={"thread_id": thread_id, "action": "rerun_sql", "chart_type": "饼图", "stream": False},
+            )
+            self.assertEqual(rerun_res.status_code, 200)
+            rerun_body = rerun_res.json()
+            self.assertTrue(rerun_body["success"])
+            self.assertEqual(rerun_body["chart_type"], "饼图")
+            self.assertEqual(mock_exec2.call_count, 1)
+
+        intr_api = self.client.post("/api/v1/graph/interrupt", json={"thread_id": thread_id})
+        self.assertEqual(intr_api.status_code, 200)
+        self.assertTrue(intr_api.json()["data"]["pause_requested"])
 
     def test_get_and_non_stream_modes(self):
         with patch("app.routers.graph_router.vn.generate_sql", return_value="SELECT user_name, age, total_score, risk_level FROM user_health_risk_assessment"), \
