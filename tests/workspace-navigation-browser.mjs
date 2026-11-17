@@ -4,7 +4,12 @@ const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 try {
   await page.goto(process.env.TEST_BASE_URL || 'http://localhost:3000');
-  for (const [name, selector] of [['AI 问答', '.assistant-dialog'], ['Text2SQL 问数', '.t2s-dialog'], ['数据分析助手', '.ana-shell']]) {
+  for (const [name, selector] of [
+    ['AI 问答', '.assistant-dialog'],
+    ['Text2SQL 问数', '.t2s-dialog'],
+    ['数据分析助手', '.ana-shell'],
+    ['健康数据分析智能体', '.hg-shell'],
+  ]) {
     const nav = page.getByRole('button', { name, exact: true });
     await nav.click();
     const panel = page.locator(`main ${selector}`);

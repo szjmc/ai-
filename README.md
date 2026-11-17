@@ -55,3 +55,21 @@
 **接口字段：**`success`、`question`、`chart_type`、`title`、`subtitle`、`echarts_option`（可直接 `setOption` 的配置）、`table`（`columns` / `rows` / `value_column` / `share_column`）、`report`（`metrics` / `summary` / `insight` / `insight_tone`）、`error`（可读提示）、`execution_time`。调试信息不进响应体。
 
 **部署注意：**`backend/main.py` 已把 `Text2EchartsRouter` 挂载到 `/api/v1/text2echarts`（独立 try 包裹，缺少可选依赖时只降级该功能）；若使用自己的 FastAPI 入口启动，需要同样挂载该路由并配置 `DIFY_API_KEY`、`DIFY_BASE_URL`（超时可用 `DIFY_TIME_OUT`，默认 600 秒）。后端 `execution_time` 统计的是生成图表前的 SQL 查询阶段，并非完整生成耗时。
+
+## 健康数据分析智能体（`/api/v1/graph/*`）
+
+工作台左侧新增「健康数据分析智能体」入口（也可直接访问 `/graph` 或 `/?view=graph`），对应双栏流式分析布局，并完整落地 LangGraph 核心特性：
+
+- **LangGraph 主管模式 + 检查点持久化**：后端由 `backend/app/utils/graph_supervisor.py` 基于 `langgraph==0.2.67` + `MemorySaver` 构建主管模式状态图（`supervisor` 节点通过 `Command(goto=...)` 调度 `sql_agent`、`data_agent`、`insight_agent`、`human_review`、`chart_agent` 节点，配合静态返回边与节点参数 `StreamWriter` 实现检查点回溯、中断与流式推送）。
+- **随时中断、断点恢复、人工干预与时间旅行重绘**：
+  - **人工干预确认（Human-in-the-Loop）**：勾选「人工干预确认」后，图执行在生成图表前通过原生 `interrupt(...)` 挂起，用户可审阅数据表格与结论、改选图表类型（柱状图 / 折线图 / 饼图）并填写「人工批注」，通过 `Command(resume=...)` 批准继续、重新查 SQL 或终止流程。
+  - **随时暂停中断与断点恢复**：流式分析期间可点击「暂停中断」向 `POST /api/v1/graph/interrupt` 发送信号，使图在当前检查点安全暂停并保留进度，随后从断点一键恢复。
+  - **基于检查点的时间旅行重绘**：分析完成后点击「检查点重绘」即可调用 `aupdate_state(..., as_node="insight_agent")` 切换柱状图 / 折线图 / 饼图，直接复用检查点数据重绘图表，无需重复查询 SQL。
+- **左侧「思考过程」与节点流水线**：实时展示 LangGraph 节点执行进度、线程与检查点计数、SSE 流式思考步骤、图表类型选择以及 `问题(图表类型)` 写法（300 字计数）。
+- **右侧「最终结果」与「ECharts 图表」**：输出结构化数据表格、关键指标、AI 分析与总结（含人工批注），并在下方渲染交互式 ECharts 图表，支持一键「导出 PDF」（将表格、分析总结与高清 ECharts 图表排版为 A4 报告并调起浏览器保存为 PDF，无额外第三方依赖）。
+- **接口与配置**：后端 `backend/app/routers/graph_router.py` 提供 `/api/v1/graph/graph_generate`、`/api/v1/graph/interrupt`、`/api/v1/graph/resume`、`/api/v1/graph/state/{thread_id}` 与 `/api/v1/graph/health`；前端通过对应 Next.js 透传代理调用上游 `GRAPH_GENERATE_URL` / `FASTAPI_URL`，不在响应中下发 SQL、数据库库表名、密钥或后端内网地址。
+- **验证命令**：
+  - Python 后端单测：`.venv/bin/python -m unittest tests/test_graph_backend.py tests/test_text2echarts_insight.py`
+  - Node 代理与流式解析测试：`node --import tsx --test tests/*.test.ts`
+  - 浏览器端 Playwright 测试：`node tests/graph-browser.mjs`、`node tests/workspace-navigation-browser.mjs`
+

@@ -50,6 +50,13 @@ try:
     logger.info("Text2Echarts 路由已挂载: /api/v1/text2echarts")
 except Exception as exc:  # pragma: no cover - 依赖缺失或配置错误时降级
     logger.warning(f"Text2Echarts 路由未挂载，工作台智能图表将不可用: {exc}")
+
+try:
+    from app.routers.graph_router import GraphRouter
+    app.include_router(GraphRouter()._register_routes(), prefix="/api/v1/graph")
+    logger.info("Graph 路由已挂载: /api/v1/graph")
+except Exception as exc:  # pragma: no cover - 依赖缺失或配置错误时降级
+    logger.warning(f"Graph 路由未挂载，健康数据分析智能体将不可用: {exc}")
 # 健康检查端点
 
 @app.get("/")

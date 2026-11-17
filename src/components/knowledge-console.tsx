@@ -8,12 +8,15 @@ import { ChunkDialog } from "./chunk-dialog";
 import { AssistantDialog } from "./assistant-dialog";
 import { Text2SqlDialog } from "./text2sql-dialog";
 import { Text2EchartsDialog } from "./text2echarts-dialog";
+import { HealthGraphAgent } from "./health-graph-agent";
 import { BrandMark } from "./archive-art";
 import { createOperator, fetchFileList, fetchOperators, fetchStats, renameOperator, type ListParams } from "@/lib/client-api";
 import { FILE_STATUSES, FILE_TYPES, OPERATORS, STATUS_META, statusLabel, strategyLabel } from "@/lib/constants";
 import { formatBytes, relativeTime, toneFor } from "@/lib/format";
 import { searchTokens } from "@/lib/file-search";
 import type { FileDict, Operator, PageInfo, Stats } from "@/lib/types";
+
+export type WorkspaceView = "files" | "assistant" | "sql" | "charts" | "graph";
 
 type Toast = { id: string; kind: "ok" | "err"; text: string };
 const DEFAULT_FILTERS: ListParams = { q: "", collectionName: "", status: "", fileType: "", sort: "created_desc", page: 1, perPage: 8 };
@@ -24,7 +27,7 @@ function Highlight({ text, query }: { text: string; query: string }) {
   return <>{parts.map((part, index) => index % 2 ? <mark key={index}>{part}</mark> : part)}</>;
 }
 
-export function KnowledgeConsole() {
+export function KnowledgeConsole({ initialView = "files" }: { initialView?: WorkspaceView }) {
   const [query, setQuery] = useState("");
   const [composing, setComposing] = useState(false);
   const [filters, setFilters] = useState<ListParams>(DEFAULT_FILTERS);
@@ -39,7 +42,7 @@ export function KnowledgeConsole() {
   const [previewFile, setPreviewFile] = useState<FileDict | null>(null);
   const [previewEditMode, setPreviewEditMode] = useState(false);
   const [chunkFile, setChunkFile] = useState<FileDict | null>(null);
-  const [view, setView] = useState<"files" | "assistant" | "sql" | "charts">("files");
+  const [view, setView] = useState<WorkspaceView>(initialView);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [droppedFile, setDroppedFile] = useState<File | null>(null);
   const [highlightId, setHighlightId] = useState<string | null>(null);
@@ -170,6 +173,7 @@ export function KnowledgeConsole() {
           <button aria-label="AI 问答" className={`tool-nav${view === "assistant" ? " active" : ""}`} aria-current={view === "assistant" ? "page" : undefined} type="button" onClick={() => setView("assistant")}><span className="tool-icon">✧</span><span>AI 问答<small>知识问答与检索</small></span><span className="tool-arrow" aria-hidden="true">›</span></button>
           <button aria-label="Text2SQL 问数" className={`tool-nav sql-entry${view === "sql" ? " active" : ""}`} aria-current={view === "sql" ? "page" : undefined} type="button" onClick={() => setView("sql")}><span className="tool-icon">⌘</span><span>Text2SQL 问数<small>用自然语言查询数据</small></span><span className="tool-arrow" aria-hidden="true">›</span></button>
           <button aria-label="数据分析助手" className={`tool-nav chart-entry${view === "charts" ? " active" : ""}`} aria-current={view === "charts" ? "page" : undefined} type="button" onClick={() => setView("charts")}><span className="tool-icon">▥</span><span>数据分析助手<small>图表 · 表格 · 智能报告</small></span><span className="tool-arrow" aria-hidden="true">›</span></button>
+          <button aria-label="健康数据分析智能体" className={`tool-nav graph-entry${view === "graph" ? " active" : ""}`} aria-current={view === "graph" ? "page" : undefined} type="button" onClick={() => setView("graph")}><span className="tool-icon">❖</span><span>健康数据分析智能体<small>流式过程 · 表格 · 图表总结</small></span><span className="tool-arrow" aria-hidden="true">›</span></button>
           <div className="side-divider" />
           <div className="panel-label"><span>知识集合</span><span>{collections.length}</span></div>
           <button className={`nav-btn${view === "files" && !filters.collectionName ? " active" : ""}`} type="button" onClick={() => changeFilters({ collectionName: "" })}><i className="dot" style={{ background: "#1b140f" }} /><span className="nav-label">全部文件</span><span className="count">{stats?.total ?? "—"}</span></button>
@@ -225,6 +229,7 @@ export function KnowledgeConsole() {
           <AssistantDialog open={view === "assistant"} onClose={() => setView("files")} onToast={pushToast} />
           <Text2SqlDialog open={view === "sql"} onClose={() => setView("files")} onToast={pushToast} />
           <Text2EchartsDialog open={view === "charts"} onClose={() => setView("files")} />
+          <HealthGraphAgent open={view === "graph"} onClose={() => setView("files")} />
         </main>
       </div>
       {dragging && <div className="drop-veil"><div><strong>将文件放到这里</strong><p>松开后选择集合，确认再上传。</p></div></div>}
